@@ -124,6 +124,9 @@ az account set --subscription 5d72e184-55f6-4093-838e-3d0f7506881a
 # Entramos en el directorio ~/k8sAzure/springBootDemo
 cd ~/k8sAzure/springBootDemo
 
+# Editamos archivo 'Application.java'
+code Application.java
+
 
 
 #################################################
