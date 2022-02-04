@@ -1,4 +1,4 @@
-# Prácticas del libro Hands-on Kubernetes on Azure, Third Edition
+# Guía de laboratorio Kubernetes en Azure
 #
 # Voy a hacer las prácticas desde un Ubuntu 20.04
 
