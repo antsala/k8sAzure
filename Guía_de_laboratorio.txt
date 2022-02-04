@@ -130,6 +130,13 @@ code Application.java
 # El programa anterior expondrá un servicio REST en localhost:8080, que imprimirá
 # el mensaje "Hola Mundo!"
 
+# Procedemos a compilar la aplicación de Java.
+# Para ello necesitamos instalar Maven.
+sudo apt install maven
+
+
+
+
 
 
 
