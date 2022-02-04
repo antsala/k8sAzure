@@ -115,31 +115,6 @@ az login
 # Si hubiera más de una subscription, debemos elegir la apropiada (es el "id")
 az account set --subscription 5d72e184-55f6-4093-838e-3d0f7506881a
 
-#######################################################
-# Creación de una imagen de contenedor de Spring Boot #
-#######################################################
-
-# Vamos a crear una app de ejemplo de Spring Boot.
-
-# Entramos en el directorio ~/k8sAzure/springBootDemo
-cd ~/k8sAzure/springBootDemo
-
-# Editamos archivo 'Application.java'
-code Application.java
-
-# El programa anterior expondrá un servicio REST en localhost:8080, que imprimirá
-# el mensaje "Hola Mundo!"
-
-# Procedemos a compilar la aplicación de Java.
-# Para ello necesitamos instalar Maven.
-sudo apt install maven
-
-
-
-
-
-
-
 
 
 #################################################
