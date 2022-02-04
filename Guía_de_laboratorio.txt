@@ -1,0 +1,5003 @@
+# Prácticas del libro Hands-on Kubernetes on Azure, Third Edition
+#
+# Voy a hacer las prácticas desde un Ubuntu 20.04
+
+##############################################
+#  Instalación de la CLI de Azure en Ubuntu  #
+##############################################
+
+# En primer lugar desinstalamos versiones previas
+sudo apt remove azure-cli -y && sudo apt autoremove -y
+
+# Actualizamos repositorios e instalamos dependencias
+sudo apt-get update
+sudo apt-get install ca-certificates curl apt-transport-https lsb-release gnupg
+
+# Descargamos la clave de firma de Microsoft
+curl -sL https://packages.microsoft.com/keys/microsoft.asc | \
+    gpg --dearmor | \
+    sudo tee /etc/apt/trusted.gpg.d/microsoft.gpg > /dev/null
+
+# Agregamos repositoritos de Azure-cli
+AZ_REPO=$(lsb_release -cs) 
+echo "deb [arch=amd64] https://packages.microsoft.com/repos/azure-cli/ $AZ_REPO main" | \
+    sudo tee /etc/apt/sources.list.d/azure-cli.list
+
+# Actualizamos repos e instalamos azure-cli
+sudo apt-get update
+sudo apt-get install azure-cli
+
+# Comprobamos versión de azure-cli
+az version
+
+###############################################
+# Instalación de Visual Studio Code en Ubuntu #
+###############################################
+
+# Si se dispone de interfaz gráfica se puede instalar VSC desde un paquete snap.
+sudo snap install --classic code
+
+# En los siguientes ejemplo, se puede usar VSC u otro editor, como nano.
+
+############################################
+# Clonamos el directorio con las prácticas #
+############################################
+
+git clone https://github.com/antsala/k8sAzure ~/k8sAzure
+
+
+
+#########################################################
+# Capítulo 1: Introduction to containers and Kubernetes #
+#########################################################
+
+# Descargamos imagen de Docker.
+sudo docker pull docker/whalesay
+
+# Ejecutamos contenedor para probar
+sudo docker run docker/whalesay cowsay boo
+
+# Listamos y borramos contenedores
+sudo docker container ls -a
+sudo docker container prune
+
+# Creamos directorio de trabajo
+mkdir -p  ~/handsonaks
+cd ~/handsonaks
+
+# Creamos Dockerfile
+echo "FROM docker/whalesay:latest" > Dockerfile
+echo "RUN apt-get -y -qq update" >> Dockerfile
+echo "RUN apt-get install -qq -y fortunes" >> Dockerfile
+echo "CMD /usr/games/fortune -a | cowsay" >> Dockerfile
+
+# Generamos imagen.
+sudo docker build -t smartwhale .
+
+# Lanzamos contenedor. '--rm' para que se borre al terminar.
+sudo docker run --rm smartwhale
+
+
+#############################################################
+# Capítulo 2. Getting started with Azure Kubernetes Service #
+#############################################################
+
+# Se crea el cluster 'myaks' con la GUI. Se crea en el grupo de recursos 'myaks-rg'.
+# Región Francia-central. Node pool con 2 nodos Standard_DS2_v2.
+#
+# El libro hace las prácticas a través de una cloud-shell. Yo lo voy a hacer desde una
+# VM con Ubuntu.
+#
+
+# Preparar la VM para conectar con Azure. Requiere tener instalado Azure-cli
+
+# Nos autenticamos con Azure
+az login
+
+# Devolverá algo como esto
+#
+# You have logged in. Now let us find all the subscriptions to which you have access...
+# [
+#   {
+#     "cloudName": "AzureCloud",
+#     "id": "5d72e184-55f6-4093-838e-3d0f7506881a",
+#     "isDefault": true,
+#     "name": "MSDN Platforms",
+#     "state": "Enabled",
+#     "tenantId": "1937cb0d-65b9-4548-bc0f-501cec973b62",
+#     "user": {
+#       "name": "antsalgra@hotmail.com",
+#       "type": "user"
+#     }
+#   }
+# ]
+
+# Si hubiera más de una subscription, debemos elegir la apropiada (es el "id")
+az account set --subscription 5d72e184-55f6-4093-838e-3d0f7506881a
+
+#######################################################
+# Creación de una imagen de contenedor de Spring Boot #
+#######################################################
+
+# Vamos a crear una app de ejemplo de Spring Boot.
+
+# Entramos en el directorio ~/k8sAzure/springBootDemo
+cd ~/k8sAzure/springBootDemo
+
+
+
+#################################################
+# Creación de un ACR (Azure Container Registry) #
+#################################################
+
+
+
+
+###########################################
+# Creación de un cluster AKS desde la CLI #
+###########################################
+
+# Listamos las regiones de Azure.
+az account list-locations
+
+# Creamos un grupo de recursos para el cluster
+az group create --name myaks-rg --location westeurope
+
+# Habilitamos la supervisión de clusteres
+az provider register --namespace Microsoft.OperationsManagement
+az provider register --namespace Microsoft.OperationalInsights
+
+# Creamos el cluster
+az aks create \
+    --resource-group myaks-rg \
+    --name myaks \
+    --location westeurope \
+    --node-count 2 \
+    --node-vm-size Standard_DS2_v2 \
+    --enable-addons monitoring \
+    --generate-ssh-keys
+
+# Una vez conectado a la subscripción, el siguiente paso es conectar al servicio AKS.
+# (Esperar a que termine la creación del cluster)
+
+# El siguiente comando descarga las credenciales y las almacena en ./kube/config
+az aks get-credentials \
+    --resource-group myaks-rg \
+    --name myaks --admin
+
+# Comprobación del estado del cluster
+az aks show \
+    --resource-group myaks-rg \
+    --name myaks
+
+#################################################
+# Instalación de kubetcl por medio de Azure-cli #
+#################################################
+sudo az aks install-cli
+
+# Probamos
+kubectl cluster-info
+kubectl get nodes
+
+
+##########################################
+# Despliegue de una aplicación de prueba #
+##########################################
+
+# Clonamos repo con las prácticas.
+git clone https://github.com/PacktPublishing/Hands-on-Kubernetes-on-Azure-Third-Edition.git Hands-On-Kubernetes-on-Azure
+
+# Entramos en el capítulo 2
+cd Hands-On-Kubernetes-on-Azure/Chapter02/
+
+# Editamos el archivo 'azure-vote.yaml'
+code azure-vote.yaml
+
+# Desplegamos la aplicación.
+kubectl create -f azure-vote.yaml
+
+# Mostramos los pods
+kubectl get pods
+
+# Mostramos los servicios y esperamos a que aparezca la dirección IP externa del balanceador del frontend.
+kubectl get service azure-vote-front --watch
+
+# Para probar conectar con un navegador a la IP externa. Se verá la app.
+
+# Mostramos todos los objetos
+kubectl get all
+
+# Borramos la app.
+kubectl delete -f azure-vote.yaml
+
+# Comprobar que solo queda el servicio de Kubernetes.
+kubectl get all
+
+
+#############################################
+# Capítulo 3: Application deployment on AKS #
+#############################################
+
+# Vamos desplegar una app con un frontend y backend de redis (un master y dos reéplicas)
+# Cambiamos al directorio del capítulo 3
+cd ~/Hands-On-Kubernetes-on-Azure/Chapter03/
+
+# Desplegamos el backend del maestro de redis.
+kubectl apply -f redis-master-deployment.yaml
+
+# Mientras, lo estudiamos.
+code redis-master-deployment.yaml
+
+# Examinamos el Despliegue.
+kubectl get all
+
+# Detalles del desployment.
+kubectl describe deployment/redis-master
+
+# Borramos el deployment desde la línea de comandos.
+kubectl delete deployment/redis-master
+
+# Comprobar que se elimina.
+kubectl get all
+
+# Ahora vamos a hacer lo mismo pero usando un ConfigMap.
+# Hay dos formas de crear un ConfigMap: Desde un archivo de texto o desde un archivo yaml.
+
+# Creación de un ConfigMap desde un archivo.
+
+# Creamos un archivo, llamado 'redis-config' y le ponemos estas dos líneas
+#   maxmemory 2mb
+#   maxmemory-policy allkeys-lru
+#
+# Realmente no hace falta hacerlo porque en el directorio de ejemplos ya existe ese archivo.
+# Así que nos limitamos a abrirlo para comprobarlo.
+code redis-config
+
+# Para crear el ConfigMap, ejecutamos el siguiente comando.
+kubectl create configmap example-redis-config --from-file=redis-config
+
+# Esto crea el achivo yaml y lo aplica para dar de alta al objeto configmap.
+# Veamos el contenido del archivo creado.
+cat example-redis-config.yaml
+
+# y ahora listamos el configmap.
+kubectl get configmaps
+
+# y observamos contenido en K8s. Observar que hay una clave llamada 'redis-config' y una lista con los valores
+# de la configuración.
+kubectl describe configmap/example-redis-config
+
+# Ahora practicamos la segunda forma de crear el configmap, es decir, desde un archivo yaml.
+# Para ello borramos el objeto recién creado.
+kubectl delete configmap/example-redis-config
+
+# En este caso partiríamos de un archivo yaml, que coincidirá exactamente con el que se creó anteriormente.
+# Lo visualizamos. '|-' Se utiliza para definir un string en varias líneas. Elimina el salto de linea al final
+# y los espacios en blanco si los hubiera.
+code example-redis-config.yaml
+
+# Volvemos a crear el configmap, pero esta vez directamente desde un yaml.
+kubectl create -f example-redis-config.yaml
+
+# Y lo describimos.
+kubectl describe configmap/example-redis-config
+
+# K8s tiene una opción muy útil, la '-o', que puede ser usada para obtener
+# la salida de un objeto presente en k8s en formato YAML o JSON. Así se
+# puede tener el archivo yaml del objeto.
+# Lo prodriamos redireccionar a un archivo si lo vemos necesario.
+kubectl get -o yaml configmap/example-redis-config
+
+# Ahora vamos a usar un configmap para pasar información al contenedor en tiempo de ejecución.
+# Vamos a abrir el archivo modificado.
+code redis-master-deployment_Modified.yaml
+
+# Observar lo siguiente:
+#
+# Líneas 24-26: Lanza el contenedor de redis pasándole información sobre el 
+#               archivo de configuración que debe utilizar: "/redis-master/redis.conf"
+#
+# Líneas 27-29: Para al contenedor una variable de entorno: MASTER=true
+#
+# Líneas 30-32: Monta un volumen llamado 'config' en la ruta '/redis-master' del
+#               contenedor.
+#
+# Líneas 39-45: Almacena el valor de la clave 'redis-config' del configmap 'example-redis-config'
+#               en el archivo 'redis.conf' en el volumen 'config'.
+#
+# Cuando el contenedor arranca, lee el archivo '/redis-master/redis.conf', que contiene los valores
+# del configmap que se creó.
+
+# Desplegamos esta versión actualizada para usar configmap.
+kubectl create -f redis-master-deployment_Modified.yaml
+
+# Miramos los pods
+kubectl get pods
+
+# Ejecutamos un comando dentro del pod para comprobar si realmente ha leido los valores de configuración.
+# Cambiar el id del pod. '--' indica que lo que viene después es el comando que ejecutan los contenedores 
+# del pod. En este caso, el pod tiene un único contenedor.
+kubectl exec -it redis-master-766c5cf5c8-4l9rc -- redis-cli
+
+# El comando anterior debe abrir una conexión con REDIS.
+# Ejecutamos los siguientes comandos para verificar que hay 2MB y la politica es LRU (Borra las claves 
+# que se usan menos Less Recent Used cuando le haga falta memoria)
+CONFIG GET maxmemory
+CONFIG GET maxmemory-policy
+
+# Ahora vamos a desplegar un servicio para los pods del deployment redis-master.
+code redis-master-service.yaml
+kubectl apply -f redis-master-service.yaml
+
+# Comprobamos el despliegue del servicio.
+kubectl get service
+
+# Comprobar que el tipo de servicio es 'ClusterIP', por lo que solo se puede acceder a él
+# desde dentro del cluster (desde otros pods) y no desde el exterior del cluster.
+
+# Un servicio también introduce un nombre DNS para dicho servicio, en la forma:
+# <nombreServicio>.<espacioDeNombres>svc.cluster.local. Puesto que estamos usando el
+# espacio de nombres 'default', la DNS del servicio 'redis-master' es:
+# redis-master.default.svc.cluster.local.
+#
+# Para ver esto funcionando, nos metemos en el pod para ver si hay resolución DNS.
+# Lo vamos a hacer con 'ping' ya que 'nslookup' no está instalado en el pod. No va 
+# a haber respuesta de ping, solo nos interesa la resolución DNS.
+
+# Listamos pods y nos quedamos con su id.
+kubectl get pods
+kubectl exec -it redis-master-766c5cf5c8-4l9rc -- ping redis-master
+
+# Comprobar que el registro A redis-master.default.svc.cluster.local. se resuelve a la IP 
+# de cluster anterior. CTRL+C para salir.
+
+# Convolución. Se completa el dominio si no se especifica completamente.
+kubectl exec -it redis-master-766c5cf5c8-4l9rc -- ping redis-master
+kubectl exec -it redis-master-766c5cf5c8-4l9rc -- ping redis-master.default
+kubectl exec -it redis-master-766c5cf5c8-4l9rc -- ping redis-master.default.svc.cluster.local
+
+# Ahora vamos a desplegar las réplicas (2) de redis, que se sincronizarán desde redis-master.
+code redis-replica-deployment.yaml
+kubectl apply -f redis-replica-deployment.yaml
+
+# Comprobamos que arrancan los pods.
+kubectl get all
+
+# Del archivo 'redis-replica-deployment.yaml' que estamos editando, destacamos:
+#
+# Línea 13:     Desplegamos 2 pods (2 réplicas)
+#
+# Línea 23:     Se usa la imagen 'follower', que se conectará a una máquina llamada 'redis-server'
+#
+# Línea 39-30:  Le decimos que la resolución se hace por DNS. De esta forma, los followers se conectará
+#               a la IP asociada a 'redis-server', es decir a 'redis-server.default.svc.cluster.local',
+#               que es la IP del pod de redis-server.
+
+
+# Para que el frontend (aún por desplegar) pueda contactar con las réplicas (además del master de redis), 
+# es necesario exponerlas mediante un servicio, que nos dará la respectiva ClusterIP.
+kubectl apply -f redis-replica-service.yaml
+
+# Comprobamos el despliegue.
+kubectl get all
+
+# Ahora desplegamos en frontend.
+code frontend-deployment.yaml
+kubectl apply -f frontend-deployment.yaml
+
+# Comprobamos
+kubectl get pods
+
+# Lo más importante en el archivo de despliegue anterior es:
+#
+# Línea 11:     El número de réplicas del frontend son 3 (3 pods)
+#
+# Línea 8-10:   Las etiquetas son 'app: guestbook', 'tier: frontend'
+#
+# Línea 20:     Se está usando la imagen de contenedor: gb-frontend:v4
+
+# en K8s existe tres formas de exponer un servicio:
+#
+#   ClusterIP:      Por defecto. Se crea una IP para el servicio y k8s redirige el tráfico al nodo apropiado.
+#                   Al ser una IP privada, el servicio no puede ser accedido desde Internet.
+#
+#   NodePort:       El servicio puede ser accedido desde fuera del cluster, conectándose a la IP (y puerto)
+#                   del nodo.
+#
+#   LoadBalancer:   Se creará un balanceador externo, con una IP pública. Se balancea entre los pods.
+
+
+# Vamos a crear un servicio de tipo 'LoadBalancer' para el frontend.
+code frontend-service.yaml
+kubectl create -f frontend-service.yaml
+
+# Comprobamos los servicios. La IP Externa tarda un rato, hasta que se cree la regla en el balanceador.
+kubectl get service
+
+# Tomar nota de la IP External del frontend y conectarse con un navegador.
+
+# Limpiamos recursos del cluster.
+kubectl delete deployment frontend redis-master redis-replica
+kubectl delete service frontend redis-master redis-replica
+
+# Comprobamos que solo queda el servicio de Kubernetes
+kubectl get all
+
+*************************************************************
+* Instalar aplicaciones complejas en Kubernetes usando Helm * (SI HAY ERROR, AL REDESPLEGAR, BORRAR PVCs y los PVs)
+*************************************************************
+
+# Helm es el administrador de paquetes de Kubernetes. Permite desplegar, actualizar,
+# y administrar las aplicaciones de Kubernetes. Para ello, se escribe algo llamado
+# 'charts'.
+#
+# Puedes pensar en los charts de Help como archivos YAML parametrizados.
+
+# Vamos a instalar Helm en Ubuntu.
+curl -fsSL -o get_helm.sh https://raw.githubusercontent.com/helm/helm/master/scripts/get-helm-3
+chmod 700 get_helm.sh
+./get_helm.sh
+source ~/.profile
+
+# Vamos a instalar WordPress por medio de Helm.
+# En primer lugar añadimos el repositorio que contiene los charts de Helm.
+helm repo add bitnami https://charts.bitnami.com/bitnami
+
+# Ahora instalamos WordPress desde Helm
+helm install myakswp bitnami/wordpress
+
+# Tarda un rato en desplegarse. comprobarlo
+kubectl get all
+
+# Mientras se despliega, vamos a ver las 'Persistent Volume Claims'
+
+##########################
+# PersistentVolumeClaims #
+##########################
+
+# Se utilizan para abstraer el almacenamiento del proveedor cloud subyacente.
+# El chart de instalación de WordPress depende del chart de instalación de MariaDB para la 
+# instalación de su base de datos.
+#
+# A diferencia de las aplicaciones sin estado, como los frontends que hemos usado, MariaDB requiere una 
+# cuidadosa gestión del almacenamiento. Para hacer que K8s administre cargas con estado, se define un 
+# objeto específico llamado 'StatefulSet'. 
+#
+# Un Statefulset es como un Deployment con capacidades adicionales que se asocian con pods individuales.
+# Esto significa que k8s se asegurará que el pod y su almacenamiento se mantengan juntos.
+#
+# Otra curiosidad es que los StatefulSets nombran los pods con números, en lugar de un id aleatorio.
+
+# Comprobamos el estado. Observar cómo se ha nombrado al pod de MariaDB ('pod/myakswp-mariadb-0')
+kubectl get pods
+
+# Otra diferencia es como se administra la eliminación del pod. Cuando el pod de un deployment se elimina,
+# K8s lo lanzará en cualquier nodo, mientras que cuando se borra un pod de un StatefulSet, K8s lo relanzará
+# solamente en el nodo que estaba corriendo. Solo cambiara el ubicación el pod si el nodo donde corría se
+# quita del cluster.
+
+# Normalmente, querrás conectar almacenamiento a un StatefulSet. Para ello se requiere un PersistentVolume (PV).
+# Este volumen puede ser respaldado por diversos mecanismos, como bloques, blobs, EBS, iSCSI, NFS, ...
+# Los StatefulSets requieren o un volumen pre aprovisionado o un volumen aprovisionado dinámicamente mediante 
+# una PersistentVolumeClaim (PVC).
+
+# Una PVC permite al usuario solicitar almacenamiento de forma dinámica, lo que resultará en la creación de un 
+# PersistentVolume (PV)
+
+# En este ejemplo de WordPress, se está usando una PVC. La PVC proporciona una abstracción sobre los mecanismos
+# de almacenamiento subyacentes.
+
+# Observemos lo que hizo el charts de Helm de MariaDB con el siguiente comando.
+kubectl get statefulset -o yaml > mariadbss.yaml
+code mariadbss.yaml
+
+# Las líneas más relevantes son:
+#
+# Línea 4:          Se declara un StatefulSet.
+#
+# Líneas 118-128:   Monta el volumen definido como 'data' en el path /bitnami/mariadb   
+#
+# Lineas 141-157:   Estas líneas declaran el PVC. Concretamente...
+#
+# Línea 148:        Le asigna el nombre 'data', que será reutilizado en la línea 120 anterior.
+#
+# Línea 151:        Establece el modo de acceso 'ReadWriteOnce', que creará un almacenamiento de bloque, que        
+#                   en Azure es un disco. También tenemos los modos 'ReadOnlyMany' y 'ReadWriteMany'.
+#                   Como su nombre sugiere, un volumen 'ReadWriteOnce' solo puede ser conectado a un único
+#                   pod, mientras que un 'ReadOnlMany' o un 'ReadWriteMany' pueden ser conectados a diferentes
+#                   pods a la vez. Estos dos últimos requieres un mecanismo de almacenamiento subyacente Del
+#                   tipo Azure Files o Azure Blob.
+#
+# Línea 154:        Define el tamaño del disco.
+#
+# En resumen, K8s solicita de forma dinámica y conecta un volumen de 8 GiB a este pod. El aprovisionador de
+# almacenamiento dinámico es de tipo disco. Estos aprovisionadores se configuraron al crear el cluster.
+#
+# Para ver las clases de almacenamiento disponibles en el cluster, ejecutamos el siguiente comando.
+# CSI = Container Storage Interface
+kubectl get storageclass
+
+# Para mostrar los detalles del PVC
+kubectl get pvc
+
+# El nombre del PVC puede buscarse en los recursos de Azure y se mostrará el disco de 8 GiB.
+
+# El concepto del PVC abstrae las cuestiones específicas del proveedor cloud. Esto permite que
+# la misma plantilla de Helm funcione en Azure, AWS o GCP. En AWS ser utilizará un Elastic Block Storage (EBS)
+# mientras que en GCP será un Persistent Disk. Los PVCs se pueden crear directamente sin la necesidad de
+# usar Helm.
+
+# Para comprobar el despliegue, usamos el comando...
+helm ls
+
+# Información de estado.
+helm status myakswp
+
+# Para ver los objetos de K8s que ha creado Helm.
+kubectl get all
+
+# Para ver el estado del despliegue del chart.
+helm status myakswp
+
+# Para desinstalar el chart.
+helm delete myakswp
+
+# Comprobar que se eliminan los objetos de k8s.
+kubectl get all
+
+# Comprobar si se ha quedado algún volumen (la eliminación del pod no implica su eliminación)
+kubectl delete pvc --all
+
+# Nota: El disco en Azure no se elimina.
+
+
+
+###############################################
+# Capítulo 4: Creando aplicaciones escalables #
+###############################################
+
+# Hay dos dimensiones para realizar el escalado de una aplicación en AKS.
+# La primera dimensión del escalado consiste en determinar el número de pods,
+# mientras que la segunda es el número de nodos del cluster.
+
+# Nos situamos el el directorio del capítulo 4
+cd ~/Hands-On-Kubernetes-on-Azure/Chapter04/
+
+# Desplegamos la aplicación Guestbook.
+kubectl create -f guestbook-all-in-one.yaml
+
+# Vamos a cambiar el servicio de frontend de ClusterIP a LoadBalancer.
+# Para ello editamos el servicio directamente.
+kubectl edit service frontend
+
+# Se usa el editor 'vi'. Pulsar 'i'. Cambiar en el código 'ClusterIP' por 'LoadBalancer'. Luego :wq!
+
+###############################################
+# Escalar el componente frontend de GuestBook #
+###############################################
+
+# El frontend tiene actualmente 3 réplicas. Podemos escalarlo dinámicamente con el 
+# siguiente comando.
+kubectl scale deployment/frontend --replicas=6
+
+# Para ver dónde están corriendo los 6 pods...
+kubectl get pods -o wide
+
+###########################################
+# Usar el HPA (Horizontal Pod Autoscaler) #
+###########################################
+
+# En K8s se puede configurar el autoescalado de los pods usando el objeto HPA.
+# HPA monitoriza las métricas a intervalos regulares, basándose en las reglas que
+# definimos. Por ejemplo, que se añadan pods adicionales si el uso de CPU es superior
+# al 50% y que se quiten si es inferior al 10%.
+
+# Para probar HPA, primero reducimos el escalado de forma manual.
+kubectl scale deployment/frontend --replicas=1
+
+# Comprobar que solo hay un pod en el frontend
+kubectl get pods
+
+# Abrimos el archivo de ejemplo 'hpa.yaml'
+code hpa.yaml
+
+# Las líneas más importantes son:
+#
+# Línea 2:      Se define el tipo de objeto a crear como 'HorizontalPodAutoscaler'
+#
+# Línea 6-9:    Definen el deployment que se auto escalará.
+#
+# Línea 10-11:  Configuramos número mínimo y máximo de pods para el autoescalado.
+#
+# Línea 12:     Definimos el porcentaje de CPU para que se dispare el autoescalado.
+
+# Realizamos el despliegue del HPA.
+kubectl create -f hpa.yaml
+
+# Comprobamos el objeto de autoescalado.
+kubectl get hpa
+
+# Ahora vamos a ver el autoescalado en acción.
+# Creamos una nueva shell y ejecutamos el comando.
+kubectl get pods -w
+
+# En la terminal original vamos a instalar un programa llamado 'hey' cuya finalidad
+# es meter carga en el servidor web. Antes instalamos 'go'
+sudo apt  install golang-go
+export GOPATH=~/go
+export PATH=$GOPATH/bin:$PATH
+go get -u github.com/rakyll/hey
+
+# Metemos carga (20 millones de Request) Usar la IP Externa del servicio de frontend.
+hey -z 20m http://20.86.236.20
+
+# Esperar unos minutos y ver en la segunda terminal como se escalan los pods.
+# Hacer CTRL+C en 'hey' y esperar un tiempo para ver como se quitan los pods.
+# Tarda un buen rato (al menos 10 minutos) Lo podemos ver con detalle describiendo el HPA.
+kubectl describe hpa frontend-scaler
+
+# Limpiamos los recursos.
+kubectl delete -f hpa.yaml
+kubectl delete -f guestbook-all-in-one.yaml
+
+# Comprobamos
+kubectl get all
+
+######################
+# Escalar el cluster #
+######################
+
+# Se puede hacer con la GUI. Lo hago con 'az aks'
+# Primero obtenemos el nombre del nodepool del cluster.
+az aks nodepool list --resource-group myaks-rg --cluster-name myaks | grep name
+
+# En este ejemplo es 'nodepool1'.
+# Dejo el número de nodos de 'nodepool1' a 1.
+az aks nodepool scale \
+    --name nodepool1  \
+    --node-count 1 \
+    --resource-group myaks-rg \
+    --cluster-name myaks
+
+# Desplegamos la app en el único nodo que tenemos.
+kubectl create -f guestbook-all-in-one.yaml
+
+# Confirmamos que se ha desplegado correctamente.
+kubectl get all
+
+
+############################
+# Autoescalado del cluster #
+############################
+
+# El autoescalado del cluster vigila el número de pods que no pueden ser planificados debido 
+# a recursos insuficientes (falta CPU o de RAM). Para forzar el autoescalado, forzaremos el
+# deployment de forma que no se puedan poner a correr todos los pods. A continuación configuraremos
+# el autoescalado del cluster.
+
+# Para forzar que el cluster se quede sin recursos, modificamos el deployment 'redis-replica'
+kubectl scale deployment redis-replica --replicas 5
+
+# Coprobamos que hay pods que no se pueden planificar porque no hay recursos.
+# Mostrarán el estado 'pending'
+kubectl get pods
+
+# Habilitamos el autoescalado del cluster.
+az aks nodepool update \
+    --name nodepool1 \
+    --enable-cluster-autoscaler \
+    --resource-group myaks-rg \
+    --cluster-name myaks \
+    --min-count 1 \
+    --max-count 2
+
+# Hay que esperar unos minutos a que se despliegue el nuevo nodo y se replanifiquen los pods.
+# Comprobarlo con
+kubectl get pods
+kubectl get nodes
+
+# Limpiamos los recursos.
+kubectl delete -f guestbook-all-in-one.yaml
+
+# Comprobamos que se han eliminado.
+kubectl get all
+
+# Quitamos autoescalado.
+az aks nodepool update \
+    --name nodepool1 \
+    --disable-cluster-autoscaler \
+    --resource-group myaks-rg \
+    --cluster-name myaks 
+
+# Ponemos dos nodos.
+az aks nodepool scale \
+    --name nodepool1 \
+    --node-count 2 \
+    --resource-group myaks-rg \
+    --cluster-name myaks
+
+
+############################
+# Upgrade de la aplicación #
+############################
+
+# Hay diversas formas mediante las cuales podemos actualizar la aplicación en el cluster.
+#
+# Archivos YAML:    Este método es útil cuando se tiene acceso a todos los archivos YAML 
+#                   que definen la aplicación.
+#
+# kubectl edit:     Se usa para hacer cambios menores en la app.
+#
+# kubectl patch:    Usado cuando no tenemos acceso a los archivos YAML originales.
+#
+# Helm:             Si se desplegó la app con HELM ésta es la mejor forma.
+#
+# La actualización no suele ser problemática si la aplicación no tiene estado (stateless).
+# Para aplicaciones con estado, es mejor hacer un backup de los volúmenes antes de hacer
+# el cambio a la app.
+
+
+##########################################################
+# Actualizar la aplicación modificando los archivos YAML #
+##########################################################
+
+# Desplegamos la aplicación.
+kubectl apply -f guestbook-all-in-one.yaml
+
+# Comprobamos. Verificar que el servicio frontend usa una ClusterIP.
+kubectl get all
+
+# Vamos a editar el achivo YAML y cambiar el tipo a LoadBalancer.
+# Lo editamos.
+code guestbook-all-in-one.yaml
+
+# Descomentar la línea 102 (type: LoadBalancer). Guardar.
+# Aplicamos los cambios.
+kubectl apply -f guestbook-all-in-one.yaml
+
+# Verificar que ahora el servicio es del tipo 'LoadBalancer'
+kubectl get svc frontend
+
+# Realizamos otro cambio. Vamos a cambiar la imagen de los contenedores del frontend de la 4 a la 3.
+# Editamos el YAML
+code guestbook-all-in-one.yaml
+
+# En la línea 127 cambiamos 'v4' a 'v3'. Guardamos. Volvemos a desplegar.
+kubectl apply -f guestbook-all-in-one.yaml
+
+# Se ha creado un replicaset nuevo, con la imagen 'v3'. Al replicaset anterior se le escala a 0.  
+# Esto será interesante para hacer rollback. 
+kubectl get all
+
+# Verificar que los pods están basados en la image 'v3'.
+kubectl describe deployment frontend
+kubectl get replicaset
+
+# K8s guarda el historial del los cambios realizados al deployment.
+kubectl rollout history deployment frontend
+
+# Se puede volver muy facilmente a versiones previas desaciendo el rollout.
+kubectl rollout undo deployment frontend
+
+# Verificar que los pods están basados en la image 'v4'. Se han reescalado los replicaset apropiados.
+kubectl describe deployment frontend
+kubectl get replicaset
+
+# Limpiamos recursos
+kubectl delete -f guestbook-all-in-one.yaml
+
+# Comprobamos.
+kubectl get all
+
+###############################################
+# Actualizar la app por medio de kubectl edit #
+###############################################
+
+# Como hemos realizado cambios a los archivos YAML, recargamos el repositorio.
+cd ~/Hands-On-Kubernetes-on-Azure/
+git reset --hard 
+cd ~/Hands-On-Kubernetes-on-Azure/Chapter04
+
+# Desplegamos la app.
+kubectl create -f guestbook-all-in-one.yaml
+
+# Comprobamos el despliege. Observar que el servicio del frontend vuelve a ser ClusterIP.
+kubectl get all
+
+# Vamos a editar el servicio frontend en el cluster (Ya lo hicimos anteriormente)
+kubectl edit service frontend
+
+# Localizar 'ClusterIP'. Pulsar 'i' y cambiar a 'LoadBalancer'. ESC + :wq!
+# Mostrar los servicios y comprobar que el fr frontend ha cambiado a tipo 'LoadBalancer'
+kubectl get service
+
+
+##########################################
+# Actualizar la app usando kubectl patch #
+##########################################
+
+# El patch es especialmente útil cuando no se tiene acceso por completo a los archivos YAML.
+# Se puede usar en sistemas automatizados CI/CD.
+# El parcheo se puede realizar de dos formas: Por medio de un archivo YAML que incluya los cambios
+# o de forma inline con kubectl.
+
+# Vamos a cambiar de nuevo la versión de la imagen de 'v4' a 'v3'. El archivo YAML ya está escrito.
+# Lo editamos.
+code frontend-image-patch.yaml
+
+# Para aplicar el parche usamos este truco.
+kubectl patch deployment frontend --patch "$(cat frontend-image-patch.yaml)"
+
+# Comprobar que vuelve a estar en la versión 'v3'
+kubectl describe deployment frontend
+
+# La otra forma es escribirlo todo en la línea de kubectl. Volvemos a la versión 'v4'
+kubectl patch deployment frontend \
+    --patch='
+        {
+            "spec": {
+                "template": {
+                    "spec": {
+                        "containers": [{
+                            "name": "php-redis",
+                            "image": "gcr.io/google-samples/gb-frontend:v4"
+                         }]
+                    }
+                }
+            }
+        }
+    '
+
+# Comprobar que vuelve a estar, otra vez, en la versión 'v4'
+kubectl describe deployment frontend
+
+# Borramos los recursos.
+kubectl delete -f guestbook-all-in-one.yaml
+
+# Comprobamos
+kubectl get all
+
+
+#################################
+# Actualizar la app usando HELM #   (SI HAY ERROR, AL REDESPLEGAR, BORRAR PVCs y los PVs)
+#################################
+
+# Volvemos a desplegar la app WordPress por medio de un chart.
+helm install wp bitnami/wordpress
+
+# Comprobamos la versión de la imagen de la BD mariaDB
+kubectl describe statefulset wp-mariadb | grep Image
+
+# Vamos a poner la imagen 10.5.13-debian-10-r51 en el StatefullSet.
+# Para poder actualizar la imagen del contenedor de mariaDB, necesitamos tener
+# el password de root del servidor, y también el password de la base de datos.
+# Esto es así porque la app WordPress está configurada para usar estos passwords
+# para poder conectar con la base de datos.
+#
+# Por defecto, la actualización de la app usande HELM generará nuevos passwords, y
+# necesitamos proporcionar los correctos.
+#
+# Los passwords se almacenan en secretos de K8s (que serán tratados más adelante)
+# Podemos obtener los passwords de mariaDB de la siguiente forma.
+kubectl get secret wp-mariadb -o yaml
+
+# Sacamos los passwords desde los secretos del cluster.
+export WORDPRESS_PASSWORD=$(kubectl get secret \
+                                --namespace "default" \
+                                wp-wordpress \
+                                -o jsonpath="{.data.wordpress-password}" | base64 --decode)
+
+export MARIADB_ROOT_PASSWORD=$(kubectl get secret \
+                                --namespace "default" \
+                                wp-mariadb \
+                                -o jsonpath="{.data.mariadb-root-password}" | base64 --decode)
+
+export MARIADB_PASSWORD=$(kubectl get secret \
+                                --namespace "default" \
+                                wp-mariadb \
+                                -o jsonpath="{.data.mariadb-password}" | base64 --decode)
+
+# Comprobamos los passwords.
+echo $WORDPRESS_PASSWORD
+echo $MARIADB_ROOT_PASSWORD
+echo $MARIADB_PASSWORD
+
+
+# Actualizamos la app con Helm proporcionando los passwords.
+helm upgrade wp bitnami/wordpress \
+    --set mariadb.image.tag=10.5.13-debian-10-r51\
+    --set mariadb.auth.password=$MARIADB_PASSWORD \
+    --set mariadb.auth.rootPassword=$MARIADB_ROOT_PASSWORD \
+    --set wordpressPassword=$WORDPRESS_PASSWORD
+    
+# Pasado un tiempo, comprobar que se ha actualizado la versión de MariaDB
+kubectl describe pod wp-mariadb-0 | grep Image
+
+# Limpiamos los recursos.
+helm delete wp
+kubectl delete pvc --all
+kubectl delete pv --all
+
+
+###################################################
+# Capítulo 5: Solucionar problemas comunes en AKS #
+###################################################
+
+# Hay dos areas donde las cosas pueden ir mal. O bien hay problemas en el cluster, 
+# o la aplicación tiene problemas.
+#
+# Un nodo del cluster puede caerse. Se debe a un error en la infraestructura de Azure
+# o un problema con la VM del nodo. En cualquier caso, K8s monitoriza el cluster buscado
+# fallos en los nodos y los recuperará automáticamente.
+#
+# Un segundo problema típico son los fallos debidos a que no hay recursos disponibles.
+#
+# Un tercero está relacionado con el montaje del almacenamiento, que ocurre cuando un nodo
+# tiene problemas. K8s NO desconectará los discos que tiene asignado el nodo con problemas.
+# Esto significa que eso discos no se pueden usar en otro nodo por los pods que lo necesiten.
+
+############################################
+# Problemas cuando cae un nodo del cluster #
+############################################
+
+# Nos aseguramos que el cluster tiene al menos dos nodos.
+kubectl get nodes
+
+# Volvemos a lanzar la app.
+cd ~/Hands-On-Kubernetes-on-Azure/Chapter05
+kubectl create -f guestbook-all-in-one.yaml
+
+# Esperamos hasta que la app se haya desplegado. Copiar la IP Externa.
+kubectl get all
+
+# Comprobamos en qué nodos se están ejecutando los pods.
+kubectl get pods -o wide
+
+# Antes de empezar a forzar errores, creamos en una terminal nueva el siguiente script.
+nano script.sh
+
+# Pegamos el siguiente contenido, sustituyendo la IP externa.
+while true; do 
+ curl -m 1 http://<EXTERNAl-IP>/; 
+ sleep 5;
+ clear;
+done
+
+# Lo hacemos ejecutable.
+chmod +x script.sh
+
+# Lo ejecutamos
+./script.sh
+
+# El script hace una request cada 5 segundos. Borra la pantalla para ver la response.
+# Mientras k8s rebalancea el cluster (cuando hay algun error de nodo) puede ser normal 
+# orservar alguna latencia en la response.
+
+# Vamos a simular el fallo de un nodo. Para ello procederemos a apagarlo. Apagamos el
+# nodo que tenga más pods. Con el siguiente comando podemos ver el nodo con más pods.
+kubectl get pods -o wide
+
+# Tomamos en nombre del grupo de recursos donde reside el scale set del cluster.
+export vmssRG=$(az aks show --name myaks --resource-group myaks-rg --query nodeResourceGroup -o tsv)
+echo $vmssRG
+
+# Listamos los nodos del cluster y nos quedamos con el nombre del que más pods contiene.
+kubectl get nodes
+
+# Supongamos que el nodo 'aks-nodepool1-97551554-vmss000000' es quien más pods contiene.
+# 'aks-nodepool1-97551554-vmss' es el nombre del vmss.
+# El carácter más a la derecha de '000000', que es el '0', es el id de la instancia.
+# Estos dos valores debemos ponerlo en el siguiente comando.
+az vmss stop --resource-group $vmssRG  --name aks-nodepool1-97551554-vmss --instance-id 0
+
+# Observar como 'curl' no obtiene respuesta mientras se rebalancea el cluster.
+# Comprobar como el estado del nodo es 'NotReady'
+kubectl get nodes
+
+# La app puede seguir funcionando porque tiene alta disponibilidad en sus microservicios, con
+# una excepción importante, redis-master. Este pod NO usa PVC, por lo tanto si su nodo cae, será
+# iniciado en otro, perdiendose su base de datos que reside en la capa reescribible del contenedor.
+# Esto demuestra la necesidad de almacenar el estado en un PVC.
+#
+# El redespliegue de los pods en el único nodo vivo puede tardar unos minutos (5 al menos). Esperar
+# y volver a comprobar con
+kubectl get pods -o wide
+
+####################################
+# Problemas cuando no hay recursos #
+####################################
+
+# Cuando un cluster no tiene suficiente CPU o memoria para planificar los pods, éstos se
+# quedan en un estado pendiente. K8s usa 'requests' para calcular cuánta CPU o memoria necesita un
+# pod concreto.
+#
+# En el archivo 'guestbook-all-in-one.yaml' aparece...
+#
+#       63 kind: Deployment
+#       64 metadata:
+#       65 name: redis-replica
+#       ...
+#       83 resources:
+#       84 requests:
+#       85 cpu: 200m
+#       86 memory: 100Mi
+#
+# Cada pod de 'redis-replica' requiere 200 milésimas de un core (20% de un core) y 100 MiB de RAM.
+# El el cluster de 2 nodos (con un nodo apagado en este momento), escalar a 10 pods causará problemas
+# de recursos de CPU.
+kubectl scale deployment/redis-replica --replicas=10
+
+# Algunos pods se quedarán en estado 'pending' y no se le asigna nodo.
+kubectl get pods -o wide
+
+# Podemos ver más detalle con el siguiente comando. Poner el id de un pod que esté en 'pending'.
+# Veremos la causa de por qué se queda en estado pendiente.
+kubectl describe pod redis-replica-<pod-id>
+
+# Volvemos a levantar el nodo que detuvimos.
+# Tomamos en nombre del grupo de recursos donde reside el scale set del cluster.
+export vmssRG=$(az aks show --name myaks --resource-group myaks-rg --query nodeResourceGroup -o tsv)
+echo $vmssRG
+
+# Listamos los nodos del cluster y nos quedamos con el nombre del que más pods contiene.
+kubectl get nodes
+
+# Supongamos que el nodo 'aks-nodepool1-97551554-vmss000000' es quien más pods contiene.
+# 'aks-nodepool1-97551554-vmss' es el nombre del vmss.
+# El carácter más a la derecha de '000000', que es el '0', es el id de la instancia.
+# Estos dos valores debemos ponerlo en el siguiente comando.
+az vmss start --resource-group $vmssRG  --name aks-nodepool1-97551554-vmss --instance-id 0
+
+# Comprobamos que los dos nodos están corriendo.
+kubectl get nodes
+
+# Vemos si se están replanificandos los pods pendientes.
+kubectl get pods -o wide
+
+# Si volvemos a describir el pod que no se iniciaba, comprobaremos que ha sido planificado.
+kubectl describe pod redis-replica-<pod-id>
+
+# Limpiamos recursos.
+kubectl delete -f guestbook-all-in-one.yaml
+
+# Comprobamos.
+kubectl get all
+kubectl get pv
+kubectl get pvc
+
+
+######################################################
+# Arreglando problemas de montaje de almacenamiento. #
+######################################################
+
+# Vamos a ver un ejemplo de cómo se puede usar un PVC para prevenir la pérdida de datos
+# cuando k8s mueve un pod a otro nodo. Para ello reutilizamos la app WordPress.
+helm install wp bitnami/wordpress
+
+# Comprobamos que se han desplegando los objetos.
+kubectl get all
+
+# Vamos a ver los PVCs que se han creado.
+kubectl get pvc
+
+# Un 'PersistentVolumeClaim' creara un 'PersistentVolume' o PV. El PV es el enlace al recurso
+# físico creado, que en Azure es un disco. El siguiente comando muestra los PVs.
+kubectl get pv
+
+# Podemos tener más información de un PV con el siguiente comando. Poner el nombre del 'pv'.
+kubectl describe pv <pv name>
+
+# Vamos a entrar como administrador en la aplicación WordPress. Para ello necesitamos el password
+# del administrador. Esto y se vió antes. El comando siguiente muestra como obtener este password.
+# Concretamente en el apartado 3.
+helm status wp
+
+export SERVICE_IP=$(kubectl get svc \
+                        --namespace default \
+                        wp-wordpress \
+                        --template "{{ range (index .status.loadBalancer.ingress 0) }}{{.}}{{ end }}")
+echo "WordPress URL: http://$SERVICE_IP/"
+echo "WordPress Admin URL: http://$SERVICE_IP/admin"
+echo Username: user
+echo Password: $(kubectl get secret \
+                    --namespace default \
+                    wp-wordpress \
+                    -o jsonpath="{.data.wordpress-password}" | base64 --decode)
+
+# Conectamos con el navegador a la URL de admin y nos autenticamos.
+# Escribimos un post en "Write your first blog post", y luego publicamos. La idea es que la
+# base de datos almacene info en el PVC.
+
+# Lo primero a probar con los PVCs es eliminar los pods y verificar si los datos persisten.
+kubectl get pods -w
+
+# Ahora eliminamos los dos pods que tienen PVCs montados. Esto lo hacemos en otra terminal para
+# comprobar en la primera que los pods pasan a estado 'terminating' y luego se crean de nuevo.
+# Tarda unos minutos (4 ó 5)
+kubectl delete pod --all
+
+# Probamos con en navegador que el post sigue estando.
+
+
+###################################################
+# Administrar el fallo de un nodo cuando hay PVCs #
+###################################################
+
+# Comprobar en qué nodos están corriendo los pods. 
+kubectl get pods -o wide
+
+# En este ejemplo MariaDB corre en el nodo 1 y WordPress en el nodo 0.
+# Vamos a provocar un fallo en el nodo donde está corriendo WordPress, que es el 0.
+
+# Tomamos en nombre del grupo de recursos donde reside el scale set del cluster.
+export vmssRG=$(az aks show \
+                    --name myaks \
+                    --resource-group myaks-rg \
+                    --query nodeResourceGroup -o tsv)
+echo $vmssRG
+
+# Listamos los nodos del cluster y nos quedamos con el nombre del que más pods contiene.
+kubectl get nodes
+az vmss stop \
+    --resource-group $vmssRG  \
+    --name aks-nodepool1-22520642-vmss \
+    --instance-id 0
+
+# Comprobamos lo que hace Kubernetes. Pueden pasar hasta 5 minutos antes que K8s determine lo que
+# hacer con el nodo caído.
+kubectl get pods -o wide -w
+
+# El nuevo pod ser queda bloqueado en el estado 'ContainerCreating'. Veamos que ha pasado.
+kubectl describe pods/wp-wordpress-<pod-id>
+
+# El estado nos dice que hay un problema con el volumen. Veremos 2 errores
+# relacionados con el volumen. El error 'FailedAttachVolume' nos dice que el
+# volumen esta siendo usado por otro pod. El error 'FailedMount' dice que el 
+# pod no puede montar el volumen.
+#
+# Vamos a resolver el problema eliminando el pod viejo que se ha quedado bloqueado
+# en el estado 'Terminating'.
+kubectl delete pod wp-wordpress-<pod-id> --force
+
+# Comprobamos el estado de los pods durante unos minutos (15 minutos) a que se levante el pod
+# y monte el volumen.
+kubectl get pods -w
+
+# Una vez que lo haya levantado, miramos lo que ha ocurrido.
+kubectl describe pod wp-wordpress-<pod-id>
+
+# Limpiamos recursos.
+helm delete wp
+kubectl delete pvc --all
+kubectl delete pv --all
+
+# Levantamos el nodo caído.
+# Tomamos en nombre del grupo de recursos donde reside el scale set del cluster.
+export vmssRG=$(az aks show \
+                    --name myaks \
+                    --resource-group myaks-rg \
+                    --query nodeResourceGroup -o tsv)
+echo $vmssRG
+
+# Listamos los nodos del cluster y nos quedamos con el nombre del que más pods contiene.
+kubectl get nodes
+az vmss stop \
+    --resource-group $vmssRG  \
+    --name aks-nodepool1-22520642-vmss \
+    --instance-id 0
+
+
+################################################
+# Capítulo 6: Asegurar la aplicación con HTTPS #
+################################################
+
+# Vamos a aprender a utilizar un objeto de K8s llamado 'Ingress' y un
+# add-on llamado 'cert-manager'.
+#
+# 'Ingress' es un  objeto de k8s que administra el acceso externo hacia
+# los servicios. Puede ser configurado para gestionar el tráfico https.
+# También puede ser utilizado para enrutar el tráfico hacia los diferentes
+# servicios basándose en el hostname que es asignado por DNS.
+#
+# 'Cert-manager' es un complemento que nos ayuda en la creación de los 
+# certificados TLS. Se encarga de la rotación de éstos cuando están próximos
+# a expirar.
+#
+# En este capítulo se configurará el Gateway de Aplicación de Azure como un
+# ingress de Kubernetes, y haremos que cert-manager se comunique con Let's Encrypt.
+
+#######################################################################
+# Configurar un Gateway de Aplicación de Azure como un Ingress de K8s #
+#######################################################################
+
+# Hasta el momento hemos expuesto los servicios directamente. Hacerlo mediante un 
+# Ingress tiene muchas ventajas, como la capacidad de enrutar varios hostnames 
+# hacia la misma IP o la descarga (offloading) de la terminación TLS hacia la
+# ingress.
+#
+# Para crear un ingress en Kubernetes, nesesitaremos un 'Controlador Ingress'.
+# Este es un programa que puede crear, configurar y administrar la entrada.
+#
+# Kubernetes no viene con un controlador ingress por defecto, por lo que hay que
+# configurar alguno de los que sean compatibles. En Azure es AGIC (Application Gateway
+# Ingress Controller), un balanceador de capa 7.
+#
+# Azure Application Gateway ofrece multitud de características avanzadas, como
+# WAF (Web Application Firewall).
+#
+# Hay dos formas de configurar AGIC, o bien usando Helm o como un complemento al
+# servicio AKS. Esta última tiene la ventaja de que puede ser actualizado automáticamente
+# por Microsoft, asegurando que el entorno está siempre actualizado.
+
+######################################
+# Crear un nuevo Application Gateway #
+######################################
+
+# Creamos un nuevo grupo de recursos para el AF en la misma ubicación del grupo de recursos
+# de AKS.
+az group create \
+    --resource-group agic-rg \
+    --location westeurope
+
+# Creamos los componentes de red necesarios para el Application Gateway.
+# Primero una IP pública. Nota: dns-name debe ser único. 
+# Tomará la forma: asgasg07012022.westeurope.cloudapp.azure.com
+az network public-ip create \
+    --name agic-pip \
+    --resource-group agic-rg \
+    --allocation-method Static \
+    --sku Standard \
+    --dns-name asgasg07012022
+
+# Y ahora una red virtual.
+az network vnet create \
+    --name agic-vnet \
+    --resource-group agic-rg \
+    --address-prefix 192.168.0.0/24 \
+    --subnet-name agic-subnet \
+    --subnet-prefix 192.168.0.0/24
+
+# Por último, creamos el Application Gateway. 
+# OJO. PUEDE TARDAR EN EL ENTORNO DE 6 MINUTOS.
+az network application-gateway create \
+    --name agic \
+    --location westeurope \
+    --resource-group agic-rg \
+    --sku Standard_v2 \
+    --public-ip-address agic-pip \
+    --vnet-name agic-vnet \
+    --subnet agic-subnet
+
+
+######################
+# Configurar el AGIC #
+######################
+
+# Una vez creado el AGIC (Application Gateway Ingress Controller), debemos
+# configurarlo para que se integre en el cluster de Kubernetes, por medio del 
+# plug-in. También configuraremos el 'Virtual Network Peering' para que el
+# Application Gateway pueda enviar tráfico al cluster de K8s.
+
+# Para habilitar la integración entre el cluster y el Application Gateway,
+# hacemos lo siguiente.
+appgwId=$(az network application-gateway show \
+            --name agic \
+            --resource-group agic-rg  \
+            -o tsv --query "id")
+
+az aks enable-addons \
+    --name myaks \
+    --resource-group myaks-rg \
+    --addons ingress-appgw \
+    --appgw-id $appgwId
+
+# Ahora hay que conectar la red del Application Gateway con la red del cluster
+# AKS.
+nodeResourceGroup=$(az aks show \
+                        --name myaks \
+                        --resource-group myaks-rg \
+                        -o tsv --query "nodeResourceGroup")
+
+aksVnetName=$(az network vnet list \
+                --resource-group $nodeResourceGroup \
+                -o tsv --query "[0].name")
+
+aksVnetId=$(az network vnet show \
+                --name $aksVnetName \
+                --resource-group $nodeResourceGroup \
+                -o tsv --query "id")
+
+az network vnet peering create \
+    --name AppGWtoAKSVnetPeering \
+    --resource-group agic-rg \
+    --vnet-name agic-vnet \
+    --remote-vnet $aksVnetId \
+    --allow-vnet-access
+
+
+appGWVnetId=$(az network vnet show \
+                --name agic-vnet \
+                --resource-group agic-rg \
+                -o tsv --query "id")
+
+az network vnet peering create \
+    --name AKStoAppGWVnetPeering \
+    --resource-group $nodeResourceGroup \
+    --vnet-name $aksVnetName \
+    --remote-vnet $appGWVnetId \
+    --allow-vnet-access
+
+# Con esto se termina la integración entre el Application Gateway y 
+# el cluster de AKS.
+
+#########################################################
+# Añadir una regla de entrada (Ingress) a la aplicación #
+#########################################################
+
+# Vamos a desplegar la aplicación 'Guestbook' e exponerla por medio 
+# de una ingress.
+cd ~/Hands-On-Kubernetes-on-Azure/Chapter06
+kubectl create -f guestbook-all-in-one.yaml
+
+# En el directorio tenemos el archivo 'simple-frontend-ingress.yaml'
+# Lo Abrimos.
+code simple-frontend-ingress.yaml
+
+# Línea 1:      Versión de la API de Kubernetes para el objeto que se crea.
+#
+# Línea 2:      El objeto es un 'Ingress'
+#
+# Líneas 5-6:   El ingress es de la clase 'azure/applicacion-gateway'
+#
+# Líneas 8-12:  Se define el path en el que está escuchando el ingress.
+#
+# Líneas 13-17: Servicio al que se enviará el tráfico.
+
+
+# Creamos el objeto ingress.
+kubectl apply -f simple-frontend-ingress.yaml
+
+# Para probar la app, nos conectamos con un navegador a:
+http://asgasg07012022.westeurope.cloudapp.azure.com
+
+# Comprobar que el servicio de frontend NO TIENE IP EXTERNA PÚBLICA.
+# Esto será así porque es de tipo ClusterIP y no LoadBalancer.
+#
+# Así que el tráfico queda así:
+#
+# Usuario --> Ingress (IP Pública) --> Servicio frontednd (IP Privada)
+
+
+############################
+# Añadir TLS a una Ingress #
+############################
+
+# Vamos a dar soporte HTTPS a la aplicación. Para ello necesitaremos un 
+# certificado (lo proporcionará Let's Encrypt) y el complemento 'cert-manager'
+# de Kubernetes, que se lo pedirá a Let's Encrypt)
+#
+# 1) Instalar 'cert-manager'
+# 
+# 2) Instalar el emisor (issuer) de certificados.
+#
+# 3) Crear el certificado SSL para un FQDN concreto.
+#
+# 4) Asegurar el servicio frontend creando un ingress con SSL.
+
+###############################
+# Instalación de cert-manager #
+###############################
+
+kubectl apply -f https://github.com/jetstack/cert-manager/releases/download/v1.2.0/cert-manager.yaml
+
+# 'cert-manager' hace uso de una funcionalidad de Kubernetes llamada 
+# 'CustomResourceDefinition' (CRD), que es una funcionalidad usada para extender
+# el API Server de Kubernetes para crear recursos personalizados. Algunos de
+# ellos serán utilizados en breve.
+
+###################################################
+# Instalación del emisor de certificador (issuer) #
+###################################################
+
+# El archivo 'certificate-issuer.yaml' contiene el código para este
+# emisor. Lo abrimos.
+code certificate-issuer.yaml
+
+# Líneas 1-2:       Apuntamos a uno de los CRDs que creó 'cert-manager'. Un 'issuer' es un
+#                   enlace entre el cluste de k8s y la CA que crea el certificado, que en este 
+#                   caso es Let's Encrypt.
+#
+# Líneas 6-10:      Aquí ponemos la configuración de Let's Encrypt y apuntamos al 
+#                   servidor staging. MUY IMPORTANTE. Poner el email.
+#
+# Líneas 11-14:     Aquí se pone la configuración para que el cliente ACME certifique la propiedad
+#                   del dominio. Hacemos apuntar a Let's Encrypt a la ingress del Application Gateway
+#                   para que verifique que eres el propietario del dominio para el que solicitarás un
+#                   certificado. Más info: https://letsencrypt.org/es/docs/client-options/
+
+# Guardarmos los cambios en el archivo y creamos el objeto.
+kubectl create -f certificate-issuer.yaml
+
+# Comprobamos que se haya creado el issuer. Observar que el campo READY ponga True.
+kubectl get issuer
+
+Si hubiera problemas, lo describimos.
+kubectl describe issuer letsencrypt-staging
+
+
+
+
+##################################################
+# Crear el certificado TLS y asegurar el ingress #
+##################################################
+
+# Hay dos formas de configurar certificados. O bien creamos un certificado
+# manualmente y lo enlazamos con la ingress, o podemos configurar al controlador ingress, de forma que
+# 'cert-manager' cree el certificado automáticamente. Utilizaremos el segundo 
+# método.
+
+# Abrimos el archivo 'ingress-with-tls.yaml'
+code ingress-with-tls.yaml 
+
+# Líneas 7-8:       Se añaden dos anotaciones al ingress que apuntan al emisor de certificado y al 
+#                   'acme-challenge' para demostrar la propiedad del dominio.
+#
+# Línea 20:         Poner aquí el nombre de dominio del ingress. En este ejemplo sería 
+#                   'asgasg07012022.westeurope.cloudapp.azure.com'. Esto es obligatorio porque Let's 
+#                   Encrypt solo entrega certificados a los dominios (no IPs)
+#
+# Línea 21-24:      ESta es la configuració TLS del ingress. También hay que poner el nombre DNS anterior,
+#                   'asgasg07012022.westeurope.cloudapp.azure.com', así como el nombre del secreto que será
+#                   creado para almacenar el certificado.
+
+# Guardar el archivo y actualizar el objeto ingress con el siguiente comando.
+kubectl apply -f ingress-with-tls.yaml
+
+# 'cert-manager' tardará aproximadamente 1 minuto en solicitar el certificado y configurar la ingress para 
+# que lo use. Los objetos intermedios que se crean son:
+#
+# Un objeto 'certificate', que podemos ver así:
+kubectl get certificate
+
+# El certificado aún no está listo. Hay otro objeto que 'cert-manager' creó para obtener el certificado. Es 
+# la petición. Podemos verificar su estado así:
+kubectl get certificaterequest
+
+# Más info con 'describe'. Se está a la espera de que Let's Encrypt emita el certificado. Esto puede verse en la línea
+# 'Waiting on certificate issuance from order default/frontend-tls-nsm44-2776352567: "pending"'
+# Esperar.
+kubectl describe certificaterequest
+
+# Cuando termine, comprobar que READY ya es 'true'.
+kubectl get certificaterequest
+
+# Comprobar que todo funciona conectando por TLS con un navegador. 
+https://asgasg07012022.westeurope.cloudapp.azure.com
+
+# Dará un error de certificado porque estamos usando el servidor de staging de Let's Encrypt.
+# https://letsencrypt.org/docs/staging-environment/ y así no le sobrecargamos sus sistemas. 
+
+
+####################################################################
+# Cambiar del entorno de staging al de producción de Let's Encrypt #
+####################################################################
+
+# Vamos a crear un nuevo 'issuer' en el cluster, pero esta vez que pida certificados de
+# producción.
+
+# editamos el archivo 'certificate-issuer-prod.yaml'
+code certificate-issuer-prod.yaml
+
+# En la línea 7, ponemos el email, Guardamos el archivo.
+
+# Editamos el archivo 'ingress-with-tls-prod.yaml'
+code ingress-with-tls-prod.yaml
+
+# En la fila 20 y en la 23 ponemos la DNS de nuestra ingress. Guardamos.
+
+# Aplicamos los archivos yaml.
+kubectl create -f certificate-issuer-prod.yaml
+kubectl apply -f ingress-with-tls-prod.yaml
+
+# Hay que esperar un minuto a que se descargue e instale el certificado.
+# Esperar a que READY sea 'true'
+kubectl get certificates
+
+# Comprobar, de nuevo,  que todo funciona conectando por TLS con un navegador. 
+https://asgasg07012022.westeurope.cloudapp.azure.com
+
+# Para borrar los recursos que dimos de alta.
+kubectl delete -f https://github.com/jetstack/cert-manager/releases/download/v1.1.0/cert-manager.yaml
+
+az aks disable-addons --name myaks --resource-group myaks-rg --addon ingress-appgw
+
+# Recordar que el Application Gateway sigue estando en Azure, habría que eliminarlo.
+# Mirar al final, borrar el grupo de recursos 'agic-rg'
+
+
+###############################################################
+Capítulo 7. Monitorización del cluster AKS y de la aplicación #
+###############################################################
+
+# Exploraremos cómo Kubernetes se asegura que tu aplicación está funcionando correctamente
+# usando las sondas 'readiness' y 'liveness'.
+#
+# Tam,bién aprenderemos como usar los diagnósticos de AKS y Azure Monitor.
+
+# Recreamos el ejemplo.
+cd ~/Hands-On-Kubernetes-on-Azure/Chapter07
+kubectl create -f guestbook-all-in-one.yaml
+
+# A continuación comprobamos los pods.
+kubectl get pods
+
+# Columna 'NAME':       Nombre del pod.
+#
+# Columna 'READY':      Indica cuántos contenedores del por están listos, comparando contra 
+#                       el número total de contenedores del pod. Tiene que ver con las sondas 
+#                       'readiness' y 'liveness' que serán tratadas en breve.
+#
+# Columna 'STATUS':     Indica el estado. Por ejemplo 'ContainerCreating', 'Running', ...
+#
+# Columna 'RESTARTS':   Número de reinicios.
+#
+# Columna 'AGE':        Edad del pod desde su creación.
+
+# Podemos mostrar columnas adicionales con:
+kubectl get pods -o wide
+
+# Columna 'IP':                 Dirección IP del pod.
+#
+# Columna 'NODE':               Nodo en el que está corriendo.
+#
+# Columna 'NOMINATED NODE':     Un nodo nominado solo se pone cuando un pod de mayor prioridad
+#                               se anticipa a otro de baja prioridad. El campo 'nominated node'
+#                               debería configurarse en el pod de alta prioridad. Señala el nodo
+#                               donde se planificará el pod de mayor prioridad una vez que el pod
+#                               de baja prioridad haya finalizado limpiamente.
+#
+# Columna 'READINESS GATES':    Es una forma de presentar componentes del sistema externo al
+#                               'readiness' del pod.
+
+# Podemos añadir más información por medio del uso de 'labels'. Se utilizan para enlazar objetos,
+# como un servicio a un pod, o un deployment a un ReplicaSet y a un pod. Si las etiquetas no
+# coinciden los recursos no se conectarán.
+
+
+##############################
+# Depuración de aplicaciones #
+##############################
+
+# En esta sección vamos a introducir una serie de errores comunes, lo depuraremos y arreglaremos.
+
+##################################
+# Errores en el pull de imágenes #
+##################################
+
+# Vamos a elegir un tag de imagen que no existe.
+# Editamos el deployment 'frontend'
+kubectl edit deployment/frontend
+
+# Cambiamos la etiqueta de la imagen de 'v4' a 'v_non_existent'
+# Escribimos '/gb-frontend' y 'Enter' para posicionarnos.
+# Ir hasta el final de la línea con la tecla derecha. Pulsar 'i' para entrar en modo de inserción.
+# Borramos 'v4' y escribimos 'v_non_existent'
+# Guardamos con ':wq!'
+
+# Miramos los pods.
+kubectl get pods
+
+# Aparecerá el error 'ErrImagePull' o el error 'ImagePullBackOff'. Ambos errores se refieren al 
+# hecho de que Kubernetes no puede descargar la imagen desde el registro.
+#
+# 'ErrImagePull' indica eso exactamente. 'ImagePullBackOff' indica que k8s esperará antes de 
+# reintentar la descarga. El intervalo de espera es exponencial, empezando en 10 segundos, 
+# luego 20, 40, ..., hasta 5 minutos.
+
+# Más info al describir.
+kubectl describe pods/<failed pod name>
+
+# Editar el deployment y cambiamos de nuevo a 'v4'
+kubectl edit deployment/frontend
+
+# Escribimos '/gb-frontend' y 'Enter' para posicionarnos.
+# Ir hasta el final de la línea con la tecla derecha. Pulsar 'i' para entrar en modo de inserción.
+# Borramos 'v4' y escribimos 'v_non_existent'
+# Guardamos con ':wq!'
+
+# Esto deberia resolver el problema.
+kubectl get pods
+
+# NOTA: Debido a que Kubernetes hizo una 'rolling update', el frontend estuvo disponible sin downtime.
+# K8s reconoció el problema al cambiar la imagen y detuvo el 'rolling update' automáticamente.
+
+############################
+# Errores en la aplicación #
+############################
+
+# Veamos como depurar un error en la aplicación.
+
+# Obtenermos la IP pública del servicio 'frontend'
+kubectl get service
+
+# Conectamos con un navegador a 'http://<IP Externa>' y comprobamos que funciona.
+
+# Vamos a escalar el frontend para dejarlo con una sola réplica.
+kubectl scale --replicas=1 deployment/frontend
+kubectl get pods
+
+# Vamos a usar 'kubectl exec' para simular un error de la app.
+kubectl exec -it <frontend-pod-name> -- bash
+
+# Actualizamos el repo e instalamos editor.
+apt update
+apt install nano
+
+# Editamos 'guestkook.php'
+nano guestbook.php
+
+# Localizar la línea que tiene 'if ($_GET['cmd'] == 'set') {' en la línea 17.
+# debajo de ella insertar el siguiente código.
+$host = 'localhost';
+if(!defined('STDOUT')) define('STDOUT', fopen('php://stdout', 'w'));
+fwrite(STDOUT, "hostname at the beginning of 'set' command "); 
+fwrite(STDOUT, $host);
+fwrite(STDOUT, "\n");
+
+# Guardamos CTRL+X + Y + Enter.
+# Se ha introducido un error donde la lectura de los mensajes seguirá funcionando,
+# pero no la escritura. Se ha hecho pidiendo al frontend que se conecte al 
+# redis master en un servidor 'localhost' que no es el correcto, así que la
+# escritura fallará.
+#
+# Salimos del contenedor.
+
+# Con el navegador conectar a 'http://<IP Externa>'
+# Escribir algún mensaje.
+# Al refrescar el navegador, el mensaje ya no está, debido a que la escritura falló.
+
+# Obtenermos el log del pod.
+kubectl logs <frontend-pod-name>
+
+# Se puede ver el mensaje de depuración que pusimos:
+# 'hostname at the beginning of 'set' command localhost'
+# que provocará el error de escritura, porque el cliente de redis no puede conectar
+# con un servidor de redis llamado 'localhost'
+# Por lo tanto, habilitar la depuración el contenedor, ayuda a solucionar problemas.
+
+# La solución del error en este caso es sencilla, puesto que la provocamos al entrar
+# en el contenedor y modificar el código. Vamos a eliminar el pod.
+#
+# Al eliminar el pod, se borra el contenedor, y la capa reescribible de éste, que es
+# la que contenía los cambios problemáticos. Como hay un ReplicaSet, se instanciará un
+# nuevo pod desde la imagen de contenedor original.
+kubectl delete pod <podname>
+
+# Probar desde el navegador que los mensajes se guardan.
+
+###################################
+# Sondas 'Readiness' y 'liveness' #
+###################################
+
+# Kubernetes utiliza las sondas para monitorizar la disponibilidad de la 
+# aplicación. Estas son:
+#
+# 'liveness probe':     Monitoriza la disponibilidad de la app mientras está en ejecución.
+#                       Si el 'liveness' falla, k8s reiniciará el pod. Suele ser útil para
+#                       recuperarse de bucles infinitos o de una app que se quede colgada.
+#
+# 'readiness probe':    Monitoriza cuando la aplicación no responde. En este caso k8s no
+#                       enviará tráfico adicional al pod. Esta sonda es interesante cuando 
+#                       la aplicación tiene que inicializarse, o cuando está sufriendo una
+#                       sobrecarga puntual de la que se está recuperando.
+#
+# Las sondas 'liveness' y 'readiness' no necesitan ser servidas desde el mismo endpoint en
+# la aplicación.
+
+# Vamos a crear dos despliegues de nginx. Cada uno con una página index y una página health.
+# La página de índice servirá como sonnda 'liveness'.
+
+# Editamos el erchivo 'index1.html'
+code index1.html
+
+# Editamos el erchivo 'index2.html'
+code index2.html
+
+# Editamos el archivo 'healthy.html'
+code healthy.html
+
+# Vamos a montar estos archivos en el despliegue. Usaremos 'configmap' para cada uno, lo que
+# nos permitirá conectarlos a los pods.
+kubectl create configmap server1 --from-file=index1.html
+kubectl create configmap server2 --from-file=index2.html
+kubectl create configmap healthy --from-file=healthy.html
+
+# A modo de recordatorio, para el primer configmap tenemos
+kubectl describe configmap/server1
+
+# Ahora vamos a crear dos despliegues web, muy parecidos uno al otro, cambiando solo el
+# configmap.
+
+# Editamos el archivo 'webdeploy1.yaml'
+code webdeploy1.yaml
+
+# Líneas 23-28:     Es la sonda 'liveness'. Apunta a la página 'healthy.html'. Recordemos 
+#                   que si la página 'healthy.html falla, el pod (contenedor) se reiniciará.
+#
+# Líneas 29-32:     Es la sonda 'readiness'. Apunta a 'index.html'. Si esta página falla, el 
+#                   pod no recibirá temporalmente ningún tráfico, pero permanecerá en 
+#                   ejecución.
+#
+# Líneas 44-45:     Al lanzar nginx, se copian las páginas a su ubicación correcta. Luego 
+#                   inicia nginx.
+
+# Vamos a lanzar estos dos despliegues.
+kubectl create -f webdeploy1.yaml
+kubectl create -f webdeploy2.yaml
+
+# Comprobamos.
+kubectl get deployments
+
+# Por último, un servicio que enrute el tráfico a los dos deployments.
+# Comprobamos el manifiesto.
+code webservice.yaml
+
+# Lo creamos.
+kubectl create -f webservice.yaml
+
+# Comprobamos.
+kubectl get svc
+
+#############################################
+# Experimentos con 'liveness' y 'readiness' #
+#############################################
+
+# Obtenemos la IP Pública del servicio.
+kubectl get service web
+
+# Conectamos con el navegador a 'http://<IP Externa>'
+# Con CTRL+F5 se puede ver el balanceo.
+
+# Vamos a usar un pequeño script ('testWeb.sh') que lo que hace es conectar 
+# 50 veces con el servicio, y así poder ver el balanceo más comodamente.
+# Lo hacemos ejecutable.
+chmod +x testWeb.sh
+
+# Lo lanzamos contra la IP Externa.
+./testWeb.sh <IP Externa>
+
+# Empecemos con un fallo en la sonda 'readiness'. Esto provocará que se pare
+# de forma temporal el tráfico que se envía al contenedor. Usaremos 'exec' para
+# cambiar de ubicación el archivo 'index' y así fallará la sonda.
+kubectl get pods 
+kubectl exec <server1 pod name> -- mv /usr/share/nginx/html/index.html /usr/share/nginx/html/index1.html
+
+# Vemos el cambio de estado del pod. El estado de readiness (READY) del pod del server 1
+# cambia a 0/1.
+kubectl get pods -w
+
+# Esto provoca que no se envíe más trafico al pod del server1. Lo comprobamos.
+./testWeb.sh <IP Externa>
+
+# Restauramos el estado del server1 volviendo a poner el archivo en su sitio.
+kubectl exec <server1 pod name> -- mv /usr/share/nginx/html/index1.html /usr/share/nginx/html/index.html
+
+# Vemos el cambio de estado del pod. El estado de readiness (READY) del pod del server 1
+# debe ser de nuevo 1/1.
+kubectl get pods -w
+
+# Y el balanceo debe volver a producirse.
+./testWeb.sh <IP Externa>
+
+# Ahora volvemos a hace el experimento pero con la sonda 'liveness'. Si falla, k8s reiniciará
+# el pod.
+
+# Borramos el archivo 'healthy.html' del server 2.
+kubectl exec <server 2 pod name> -- rm /usr/share/nginx/html/healthy.html
+
+# Miramos. Habrá que esperar unos segundos para ver que se reinicia.
+kubectl get pods -w
+
+# Podemos verlo con más detalles así.
+kubectl describe pod <server2 pod name>
+
+# Limpiamos recursos.
+kubectl delete deployment server1 server2
+kubectl delete service web
+
+######################################
+# Métricas reportadas por Kubernetes #
+######################################
+
+# Para listar los nodos del cluster.
+kubectl get nodes
+
+# Más información.
+kubectl get -o wide nodes
+
+# Consumo en los nodos.
+kubectl top nodes
+
+# Ver eventos en un nodo.
+kubectl describe node <node name>
+
+# Ver consumos del pod.
+# Pods corriendo en el espacio de nombres 'kube-system'
+kubectl get pods -n kube-system
+
+# Veamos los 'requests' y 'limits' de un pod concreto.
+kubectl describe pod coredns-<pod id> -n kube-system
+
+# Si el pod pide más memoria que su límite, k8s reinicia el pod.
+
+# Consumo actual de los pods.
+kubectl top pods --all-namespaces
+
+# Consumo actual de los pods del espacio de nombres 'default'
+kubectl top pods 
+
+# Al tratarse de un servicio administrado (AKS) podemos 
+# recurrir a las herramientas del proveedor cloud para reporting.
+
+###################
+# AKS Diagnostics #
+###################
+
+# Para acceder a los diagnósticos de AKS. En el portal de Azure ir a 
+# myaks | Diagnose and solve problems
+
+# Los diagnósticos nos ofrecen dos herramientas para explorar los problemas.
+# 'Cluster Insights' y 'Networking', ambas dentro del grupo 'Monitoring'.
+#
+# 'Cluster Insights usa los logs del cluster y la configuración para realizar
+# chequeos de salud y compara tu cluster contra las mejores prácticas.
+# 
+# Para Log Analytics se usa Kusto Query Language (KQL) 
+# https://docs.microsoft.com/azure/data-explorer/kusto/concepts/
+
+# Limpiamos.
+kubectl delete -f guestbook-all-in-one.yaml
+
+# Comprobamos.
+kubectl get all
+
+
+###########################
+# Capítulo 8. RBAC en AKS #
+###########################
+
+# Hasta el momento, hemos tenido permisos para crear, leer, actualizar y eliminar
+# objetos en el cluster. Esto funciona bien en un entorno de prueba, pero no es
+# recomendable para uno de producción.
+#
+# En los clusteres de producción, la recomendación es aprovechar RBAC y conceder 
+# un conjunto limitado de permisos a los usuarios. 
+# 
+# Será necesario configurar RBAC en Kubernetes e intregrarlo con AAD.
+#
+# RBAC tiene 3 conceptos importantes:
+#
+# Role:         Contiene un conjunto de permisos. Por defecto, el rol no tiene ningún
+#               permiso y en consecuencia hay que especificarlos. Los permisos son del
+#               tipo 'get', 'watch', 'list'... Se les llama "verbos".
+#               Aquí los verbos admitidos por el API Server: 
+#               https://kubernetes.io/docs/reference/access-authn-authz/authorization/#determine-the-request-verb
+#
+#               El rol también contiene los recursos a los que se aplican esos permisos.
+#               Los recursos pueden ser todos los pods, los deployments, etc, o puede
+#               ser un objeto concreto, como 'pod/mypod'.
+#
+# Subject:      Se refiere a la persona o a la cuenta de servicio a la que se asigna el rol.
+#               En los clusteres de AKS integrados con AAD, el subject puede ser un usuario
+#               o un grupo de AAD.
+#
+# RoleBinding:  Sirve para enlazar un subject a un rol para un espacio de nombres. Si 
+#               es 'CusterRoleBinding', se refiere a la totalidad del cluster.
+#
+# Un concepto importante a comprender es que hay dos capas de RBAC: Los RBAC de Azure y los
+# los RBAC de Kubernetes.
+#
+# Los RBAC de Azure tienen que ver con los roles asignados a las personas para hacer cambios 
+# en Azure, como crear, modificar o borrar clústeres. Los RBAC de Kubernetes tienen que ver 
+# con el derecho de acceso a los recursos del cluster.
+#
+# Los RBACs de Kubernetes son una característica OPCIONAL. Por defecto los clusteres que se
+# crear tienen RBAC habilitado, sin embargo no están integrados con AAD. Esto significa que
+# no se pueden dar permisos de Kubernetes a usuarios de AAD, y habría que integrarlo.
+
+###############################################
+# Habilitar la integración de Azure AD en AKS #
+###############################################
+
+# Una vez que el cluster ha sido integrado con Azure AD, esta funcionalidad no puede ser deshabilitada.
+
+# Empezamos creando un grupo en AAD y le asignaremos permisos en AKS.
+AKS_ADMIN_GROUP_ID=$(az ad group create --display-name "aks admins" --mail-nickname aksadmins --description "Administradores de clusteres AKS" --query objectId -o tsv)
+
+# Actualizamos la integración de Azure AD para el cluster.
+az aks update --resource-group myaks-rg --name myaks --enable-aad --aad-admin-group-object-ids $AKS_ADMIN_GROUP_ID 
+
+# Esta acción podemos verla en la GUI en:
+# Home / Kubernetes Services / myaks / Cluster configuration / Kubernetes authentication and authotization
+
+####################################################################
+# Añadir al usuario administrador del tenant al grupo 'aks admins' #
+####################################################################
+
+# Al habilitar la integración con AAD, es necesario poner al administrador del tenant en el
+# grupo de administradores del cluster, de lo contrario no podrá administrarlo por la GUI ni
+# por la CLI.
+
+# Tomamos el ID del administrador del tenant.
+# NOTA: En el UPN poner el dominio verificado apropiado.
+ADMIN_USER_ID=$(az ad user show \
+                    --id antsalgra_hotmail.com#EXT#@antsalgrahotmail.onmicrosoft.com \
+                    --query objectId -o tsv)
+
+# Agregamos al admin al grupo de administradores del cluster.
+az ad group member add \
+    --group $AKS_ADMIN_GROUP_ID \
+    --member-id $ADMIN_USER_ID
+
+###############################################################
+# Crear un usuario y un grupo de seguridad para asignar roles #
+###############################################################
+
+# Creamos un usuario del cluster.
+# NOTA: En el UPN poner el dominio verificado apropiado.
+LUKE_USER_ID=$(az ad user create \
+                --display-name "Luke Skywalker" \
+                --password useTheForce# \
+                --user-principal-name luke@antsalgrahotmail.onmicrosoft.com \
+                --mail-nickname luke \
+                --query objectId -o tsv)
+
+# Creamos otro grupo de seguridad, llamado 'aks users', donde pondremos a los usuarios del cluster sin rol administrativo.
+AKS_USERS_GROUP_ID=$(az ad group create \
+                        --display-name "aks users" \
+                        --mail-nickname aksusers \
+                        --description "usuarios de clusteres AKS" \
+                        --query objectId -o tsv)
+
+# Agregamos a Luke al grupo de usuarios del cluster.
+az ad group member add \
+    --group $AKS_USERS_GROUP_ID \
+    --member-id $LUKE_USER_ID
+
+# Ahora necesitamos hacer que Luke sea un usuario de cluster en el RBAC de AKS.
+# Esto lo habilitará para usar la Azure CLI y conseguir acceso al cluster.
+
+# Lo primero es tomar el identificador de recurso del cluster AKS en Azure.
+AKS_ID=$(az aks show \
+            --resource-group myaks-rg \
+            --name myaks \
+            --query id -o tsv)
+
+# Es algo así: '/subscriptions/5d72e184-55f6-4093-838e-3d0f7506881a/resourcegroups/myaks-rg/providers/Microsoft.ContainerService/managedClusters/myaks'
+#Lo consultamos.
+echo $AKS_ID
+
+# Creamos una asignación de rol de Azure para el grupo "aks users", del que es miembro "Luke".
+# Si diera error de que el principal de seguridad no existe, esperar unos segudos porque el grupo aún no se ha creado.
+sleep 60
+az role assignment create \
+    --assignee $AKS_USERS_GROUP_ID \
+    --role "Azure Kubernetes Service Cluster User Role" \
+    --scope $AKS_ID
+
+# El resultado de esta acción se puede ver en la GUI en: Home / Kubernetes services / myaks / Access Control (IAM) / Role Assignments
+# 
+# El role "Azure Kubernetes Service Cluster Role", tiene como descripción "List cluster user credential action", que 
+# permite tomar las credenciales de ese usuario en el cluster y almacenarlas en .kube/config, para que posteriormente
+# kubectl pueda usarlas.
+
+# NOTA: Si se hubiera usado la CloudShell, también habría que dar permisos a USER_GROUP_ID para la cuenta de almacenamiento donde reside
+#       la CloudShell. En este ejemplo no lo hacemos.
+
+##########################
+# Configurar RBAC en AKS #
+##########################
+
+# Para hacer la demo, crearemos dos 'namespaces' y desplegaremos la aplicación de voto de 
+# Azure en cada espacio de nombres. Asignaremos al grupo que creamos acceso de solo lectura
+# de ámbito de cluster a los pods. Al usuario de asignaremos la capacidad de eliminar pods 
+# solo en uno de los espacios de nombres.
+#
+# Crearemos los siguientes objetos en k8s.
+#
+# Un 'ClusterRole' para dar el acceso de solo lectura a todos los pods del cluster 
+# Un 'ClusterRoleBinding' para asignar al grupo 'aks users' el rol anterior de solo lectura.
+# Otro 'ClusterRole' para dar permisos de eliminación en el espacio de nombres 'delete-access'
+# Otro 'ClusterRoleBinding' para asignar al usuario 'Luke' el rol de eliminación anterior.
+
+
+# Creamos los dos espacios de nombres. "no-access" y "delete-access". La idea es que el usuario que
+# vamos a crear pueda borrar pods en "delete-access" y no pueda hacerlo en "no-access".
+kubectl create ns no-access
+kubectl create ns delete-access
+
+# Desplegamos la aplicación de voto en los espacios de nombres.
+cd ~/Hands-On-Kubernetes-on-Azure/Chapter08
+kubectl create -f azure-vote.yaml --namespace no-access
+kubectl create -f azure-vote.yaml --namespace delete-access
+
+# Comprobamos.
+kubectl get all --namespace no-access 
+kubectl get all --namespace delete-access 
+
+# Ahora vamos a crear el objeto 'ClusterRole', que asignará permisos de solo lectura en todo el cluster.
+# Editamos el archivo 'clusterRole.yaml'
+code clusterRole.yaml
+
+# Línea 2:  Define la creación de una instancia 'ClusterRole'
+#
+# Línea 4:  A la que le asigna el nombre 'readOnly'
+#
+# Línea 6:  Concede acceso a todos los grupos de la API.
+#           https://kubernetes.io/docs/reference/using-api/#api-groups
+#
+# Línea 7:  Concede acceso a todos los pods.
+#
+# Línea 8:  Concede acceso a las acciontes 'get', 'watch' y 'list'.
+#           https://kubernetes.io/docs/reference/access-authn-authz/authorization/#determine-the-request-verb
+
+
+# Creamos el objeto 'ClusterRole'
+kubectl create -f clusterRole.yaml
+
+# Comprobamos
+kubectl get clusterRole
+
+# Podemos inspeccionalo.
+kubectl describe clusterRole readOnly
+
+# Copiamos en el portapapeles $USER_GROUP_ID. Lo necesitaremos en un momento.
+echo $USER_GROUP_ID
+
+# Ahora vamos a crear un objeto 'ClusterRoleBinding' que enlaza el rol a un usuario o grupo.
+# Editamos el archivo 'clusterRoleBinding.yaml'
+code clusterRoleBinding.yaml
+
+# Línea 2:      Define que estamos creando una instancia 'ClusterRoleBinding'.
+#
+# Línea 4:      Le asigna el nombre 'readOnlyBinding'.
+#
+# Líneas 5-8:   Hace referencia al objeto 'ClusterRole' que creamos anteriormente.
+#
+# Líneas 9-12:  Se refiere al grupo de AAD que creamos antes (aks users). Sustituir en la línea 12
+#               el id que tenemos copiado en el portapapeles.
+
+# Guardar los cambios y salir.
+
+# Creamos el objeto 'ClusterRoleBinding'
+kubectl create -f clusterRoleBinding.yaml
+
+# Comprobamos.
+kubectl get clusterRoleBinding
+
+# Lo inspeccionamos.
+kubectl describe clusterRoleBinding readOnlyBinding
+
+# A continuación crearemos un rol que permite la eliminación en el espacio de nombres 'delete-access'.
+# Editamos el archivo 'role.yaml'
+code role.yaml
+
+# Línea 2:      Se indica que se está creando una instancia de 'Role' y no de 'ClusterRole'. La instancia de 'Role'
+#               no se aplica a todo el cluster.
+#
+# Línea 5:      Aquí ponemos el espacio de nombres al que se aplica.
+#
+# Líneas 7-9:   Los tipos de recursos afectados y los verbos permitidos.
+
+# Creamoe el rol.
+kubectl create -f role.yaml
+
+# Comprobamos (ojo con el espacio de nombres)
+kubectl get role --namespace delete-access
+
+# Inspeccionamos.
+kubectl describe role deleteRole  --namespace delete-access
+
+# Por último creamos una instancia de 'RoleBinding' para asignar el role al usuario 'Luke'.
+# Editamos el archivo 'roleBinding.yaml'
+code roleBinding.yaml
+
+# Línea 2:      Crea una instancia de un 'RoleBinding' y no de un 'ClusterRoleBinding' porque lo que se 
+#               está asociando es un 'Role' y no un 'ClusterRole'.
+#
+# Línea 5:      Indica el espacio de nombres en el que se crea este rol.
+#
+# Línea 7:      Hacer referencia a una instancia 'Role' y no a una 'ClusterRole'
+#
+# Líneas 11-13: Define un usuario en lugar de un grupo. OJO: Poner el usuario que hemos creado.
+
+# Creamos la instancia.
+kubectl create -f roleBinding.yaml
+
+# Comprobamos.
+kubectl get roleBinding --namespace delete-access
+
+# Inspeccionamos.
+kubectl describe roleBinding deleteBinding --namespace delete-access
+
+
+#######################################
+# Verificar RBAC para el usuario Luke #
+#######################################
+
+# Cerramos la sesión de Azure del usuario actual.
+az logout
+
+# Borramos la caché de cuentas de Azure.
+az account clear
+
+# Iniciamos sesión con el usuario 'Luke@antsalgrahotmail.onmicrosoft.com' y password 'useTheForce#'.
+az login
+
+# ¡¡¡¡MUY IMPORTANTE!!!!
+#
+# az aks get-credentials toma las credenciales de un cluster administrado de AKS y las almacena
+# en el archivo "~/.kube/config" de forma que "kubectl" pueda usarlas.
+#
+# Hasta el momento, hemos usado la CLI como "administrador", usando el parámetro "--admin" 
+# del comando anterior. Este parámetro se utiliza para:
+#
+#   --admin -a    : Get cluster administrator credentials.  Default: cluster user credentials.
+#                   On clusters with Azure Active Directory integration, this bypasses normal Azure AD
+#                   authentication and can be used if you're permanently blocked by not having access to a valid
+#                   Azure AD group with access to your cluster. Requires 'Azure Kubernetes Service Cluster
+#                   Admin' role.
+#
+# Es decir, que en lugar de poner a un usuario en un grupo asignado al rol "Azure Kubernetes Service Cluster Admin"
+# hemos utilizado "--admin" para saltarnos el RBAC de Azure.
+#
+# Como ahora mismo es esto lo que probamos, descargamos las credenciales para el usuario "Luke" SIN USAR "--admin".
+
+# Otro parámetro interesante es "--overwrite-existing" cuya finalidad es:
+#
+#   --overwrite-existing   : Overwrite any existing cluster entry with the same name.
+#
+# Que debemos utilizarlo si le cambiamos los permisos al usuario en Azure. 
+#
+# En definitiva, para descargar las credenciales de "Luke" debemos poner.
+az aks get-credentials \
+    --resource-group myaks-rg \
+    --name myaks \
+    --overwrite-existing
+
+# Podemos ver que estamos logados a la subscripción de Azure con el usuario "Luke" con el comando:
+az account show
+
+# Vamos a verificar si el usuario tiene permiso para ver los pods en todos los espacios de nombres.
+# Debe ver los pods en los dos espacios.
+kubectl get pods --namespace no-access
+kubectl get pods --namespace delete-access
+
+# Esto es debido al objeto 'ClusterRole' asignado al grupo (aks users). De hecho, al aplicarse al cluster
+# tendría acceso a todos los espacios de nombres, como puede comprobarse con el siguiente comando.
+kubectl get pods --all-namespaces
+
+# Ahora comprobamos los permisos de eliminación. Solo debe poder eliminar del espacio de nombres 'delete-access'
+kubectl delete pod --all --namespace delete-access
+kubectl delete pod --all --namespace no-access
+
+# Para limpiar, INICIAMOS SESIÓN CON EL USUARIO ADMINISTRADOR.
+az logout
+
+# Borramos la caché de cuentas de Azure.
+az account clear
+
+# Iniciamos sesión con el usuario 'Luke@antsalgrahotmail.onmicrosoft.com' y password 'useTheForce#'.
+az login
+
+# Actualmente el cluster tiene configurado RBAC y la autenticación de AAD. Actualizamos credenciales.
+az aks get-credentials \
+    --resource-group myaks-rg \
+    --name myaks \
+    --overwrite-existing
+
+# Alternativamente podemos saltarnos la autenticación de AAD y tener credenciales de aministrador en el cluster así:
+az aks get-credentials \
+    --resource-group myaks-rg \
+    --name myaks \
+    --overwrite-existing \
+    --admin
+
+
+kubectl delete -f azure-vote.yaml -n no-access
+kubectl delete -f azure-vote.yaml -n delete-access
+kubectl delete -f .
+kubectl delete ns no-access
+kubectl delete ns delete-access
+
+
+#####################################################
+# Capítulo 9. Asignar identidades de AAD a los pods #
+#####################################################
+
+# IMPORTANTE: REQUIERE HABER INTEGRADO AAD EN AKS. SE HIZO EN EL CAPÍTULO ANTERIOR.
+
+# En este capítulo veremos como se puede integrar una aplicación que corre en AKS con Azure AD.
+# Aprenderemos a asignar a los pods una identidad en Azure, de forma que puedan interactuar con
+# otros recursos de Azure.
+#
+# En Azure, las identidades de aplicación usan una funcionalidad llamada "Service Principal".
+# Un Service Principal es el equivalente a una cuenta de servicio tradicional. La aplicación
+# puede usar el "Service Principal"  para autenticarse con Azure AD y obtener acceso a los recursos,
+# que pueden ser un Azure Blob Storage o un Key Vault, entre otros. También podrían ser aplicaciones
+# que has desarrollado y que estan integradas con AAD.
+
+# Hay dos formas para autenticar un service principal: Usar un password o una combinación de 
+# certificado y clave privada. Aunque ambas son formas seguras de autenticar a la aplicaciones, la
+# administración de los passwords o los certificados y la rotación de las claves pueden ser
+# laboriosas.
+#
+# Las "Managed Identities" de Azure hacen que la autenticación de un service principal sea más 
+# sencilla. Funcionan asignando una identidad a un recurso de computación en Azure, como podrían
+# ser una máquina virtual o una Azure Function.
+#
+# Estos recursos pueden autenticarse usando esa identidad administrada mediante la llamada a un
+# endpoint que solo es accesible a esa máquina o function. Es un tipo de autenticación segura que 
+# requiere que administremos ni passwords ni certificados.
+
+# Las identidades de pods administradas en Azure AD nos permiten asignar identidades administradas
+# a los pods en AKS. Debido a que los pods en Kubernetes corren sobre máquinas virtuales, por 
+# defecto, cada pod debería ser capaz de acceder al endpoint de la identidad administrada y 
+# autenticarse usando dicha identidad.
+
+# En este capítulo configuraremos la identidad de pods administrada en el cluster AKS y la Usaremos
+# para acceder a un Blob Storage. En el capítulo posteriore se utilizará la identidad de pod 
+# administrada para acceder a un Key Vault y administrar secretos de Kubernetes.
+
+#######################################################
+# Introducción a las identidades de pod administradas #
+#######################################################
+
+# Como se explicó, las identidades administradas en Azure son una forma de autenticar
+# de forma segura a las aplicaciones que corren dentro de Azure. Exiten dos typos de
+# identidades administradas, que se diferencian en la forma en la que se relacionan con
+# los recursos:
+#
+# System Asigned:   Tiene una relación 1:1 con el recurso (por ejemplo una máquina virtual).
+#                   Este tipo de identidad administrada comparte el ciclo de vida con el
+#                   recurso, lo que significa que si el recurso se elimina, la identidad
+#                   administrada también se borra.
+#
+# User Assigned:    Las identidades administradas asignadas por el usuario son recursos 
+#                   idenpendientes. Pueden estar relacionadas con diferentes recursos. Cuando
+#                   se elimina el recurso, la identidad administrada NO se borra.
+#
+# Ambos tipos de identidades administradas funcionan de la misma forma una vez que han sido
+# creadas y asociadas con un recurso. Así es como las identidades administradas funcionan 
+# desde la perspectiva de una aplicación:
+#
+# 1.    Tu aplicación que se ejecuta en Azure solicita un token al servicio IMDS (Instance
+#       Metadata Service) [1]. IMDS está solo disponible para el propio recurso, en una IP no
+#       enrutable (169.254.169.254)
+#
+# 2.    IMDS solicitará un token a Azure AD [2]. Usa un certificado que está configurado para tu
+#       identidad administrada y es solo conocido por IMDS.
+#
+# 3.    Azure AD devolverá un token a IMDS [3], que a su vez, lo devolverá a la aplicación [4].
+#
+# 4.    La aplicación puede usar ese token para autenticarse con otros recursos [5], por ejemplo,
+#       un Blob Storage.
+#
+#
+#     VIRTUAL MACHINE                                                   AZURE
+#  ----------------------                -------------------------------------------------------------------------
+#
+#             (Solicita token) [1] --->                                       (Se autentica) [2]--->
+#     /APP/                              /INSTANCE METADADA SERVICE (IMDS)/                             /Azure AD/
+#       |     <--- (recibe token) [4]                                         <--- (recibe token) [3]
+#       |
+#       |  (Accede usando token) [5]
+#       |
+#  /Azure Resource/
+#
+# Cuando se ejecutan varios pods en la misma máquina vitual en un cluster de Kubernetes, por
+# defecto cada pod puede alcanzar el endpoint IDMS. Esto significa que cada pod podría tener
+# acceso a las identidades configuradas para esa máquina virtual.
+#
+# El complemento de identidades de pod administradas de AAD configura el cluster de forma que
+# los pods ya no pieden tener acceso directo al endpoint IDMS para solicitan un token de acceso.
+# Configura el cluster de forma que los pods que estén intentando acceder al endpoint IDMS [1]
+# conectarán con un DaemonSet que corre en el cluster, y que recibe el nombre de Node Managed 
+# identity (NMI). 
+#
+# NMI verificará a qué identidades debería tener acceso el pod. Si el pod está configurado para
+# tener acceso a la identidad solicitada, entonces el DaemonSet NMI conectará con el IMDS (pasos
+# [2] a [5]) para obtener el token y lo entregará al pod [6]. 
+#
+# El pod(s) usará ese token para acceder a los recursos de Azure [7]
+
+
+#     VIRTUAL MACHINE                                                                      AZURE
+#  --------------------------------------------      -------------------------------------------------------------------------
+#
+#            (Solicita token) [1] -->               (Solicita token) [2] -->          (Se autentica) [3]-->
+#     /POD/                              /NMI/                                /IMDS/                          /AAD/
+#       |    <-- (recibe token) [6]                 <-- (recibe token) [5]           <-- (recibe token) [4]
+#       |
+#       |
+#       |  (Accede usando token) [7]
+#       |
+#  /Azure Resource/
+
+# De esta forma, podemos controlar los pods del cluster que tendrán acceso a ciertas identidades y, 
+# en consecuencia, a cierto recursos de Azure.
+
+#########################################################################
+# Configurar un cluster con identidades de pod aministradas de Azure AD #
+#########################################################################
+
+# El complemento de identidades de pod administradas en un cluster en ejecución,
+# se realiza por medio de la preview de aks. En la fecha de este escrito, 
+# Enero 2022, aún está en beta y no forma parte de la CLI oficial.
+
+# Para poder instalar este complemento, debemos agregar dicha extensión a la CLI
+az extension add --name aks-preview
+
+# Actualiamos por si Microsoft hubiera publicado una nueva versión. 
+az extension update --name aks-preview
+
+# Registramos las identidades de pod administradas de Azure AD.
+az feature register \
+    --name EnablePodIdentityPreview \
+    --namespace Microsoft.ContainerService
+
+# Tal y como sugiere el warning, se requiere este comando para que se propague el cambio.
+az provider register --name Microsoft.ContainerService
+
+# Comprobar que la característica de identidad de pods se ha registrado en la subscripción.
+# ¡¡¡¡IMPORTANTE!!!!!
+# Esperar hasta que aparezca 'Registered' en 'RegistrationState'. Lleva bastante tiempo. 10-15 minutos.
+az feature show \
+    --name EnablePodIdentityPreview \
+    --namespace Microsoft.ContainerService \
+    -o table
+
+# Actualizamos el cluster para que use la identidades de pod administradas.
+az aks update \
+    --resource-group myaks-rg  \
+    --name myaks \
+    --enable-managed-identity \
+    --enable-pod-identity \
+    --enable-pod-identity-with-kubenet
+
+# Volvemos a refrescar as credenciales para kubectl.
+az aks get-credentials \
+    --resource-group myaks-rg \
+    --name myaks \
+    --overwrite-existing
+
+# Listamos nodos para comprobar
+kubectl get nodes
+
+####################################
+# Asociar una identidad al cluster #
+####################################
+
+# Para empezar, vamos a crear una nueva identidad administrada asignada por el usuario en Azure.
+az identity create \
+    --resource-group myaks-rg \
+    --name access-blob-id \
+    --location westeurope 
+
+# En la GUI se puede ver la identidad administrada en Home / Managed Identities / access-blob-id
+
+# Una vez creada, necesitamos copiar el 'clientId' (identificador único de la nueva identidad)
+# y el 'id' (identificador del recurso), que serán usados en breve.
+CLIENT_ID=$(az identity show \
+                --resource-group myaks-rg \
+                --name access-blob-id \
+                --query clientId \
+                -o tsv)
+RESOURCE_ID=$(az identity show \
+                --resource-group myaks-rg \
+                --name access-blob-id \
+                --query id \
+                -o tsv)
+
+# Comprobamos
+echo $CLIENT_ID
+echo $RESOURCE_ID
+
+# Ahora estamos preparados para asociar la identidad administrada al cluster AKS.
+az aks pod-identity add \
+    --resource-group myaks-rg \
+    --cluster-name myaks \
+    --namespace default \
+    --name access-blob-id \
+    --identity-resource-id $RESOURCE_ID
+
+# Podemos comprobar que la identidad ha sido asignada al cluster y está disponible para su uso, con este comando.
+kubectl get azureidentity
+
+##############################################
+# Usar un pod con una identidad administrada #
+##############################################
+
+# Vamos a crear una cuenta de almacenamiento y usaremos la identidad administrada para acceder a ella.
+STORAGE_ACCOUNT_NAME=myaks20220114sto
+az storage account create \
+    --name $STORAGE_ACCOUNT_NAME \
+    --resource-group myaks-rg \
+    --location westeurope \
+    --sku Standard_LRS \
+    --kind StorageV2
+
+# Tomamos el contexto de la cuenta de almacenamiento, que es algo como esto:
+# '/subscriptions/5d72e184-55f6-4093-838e-3d0f7506881a/resourceGroups/myaks-rg/providers/Microsoft.Storage/storageAccounts/myaks20220114sto'
+STORAGE_ACCOUNT_SCOPE=$(az storage account show \
+                            --resource-group myaks-rg \
+                            --name $STORAGE_ACCOUNT_NAME \
+                            --query id \
+                            -o tsv)
+
+# Comprobamos
+echo $STORAGE_ACCOUNT_SCOPE
+
+# Ahora asignaremos la identidad administrada acceso a la cuenta de almacenamiento.
+# En la interfaz gráfica se hace en: Home / Storage Accounts / <cuenta almacenamiento> / Access Control (IAM) / Role Assignments / add
+# y elegir el rol "Storage Blob Data Contributor" y asignarlo a la idendidad administrada asignada por el usuario 'access-blob-id'
+# para el contexto de la cuenta de almacenamiento. # Con la CLI sería.
+az role assignment create --assignee $CLIENT_ID --role "Storage Blob Data Contributor" --scope $STORAGE_ACCOUNT_SCOPE 
+
+# Vamos a crear un archivo y lo subiremos al conetenedor (DE BLOB) que vamos a crear. Posteriormente, comprobaremos
+# que podemos acceder al archivo desde un pod de AKS.
+
+# Vamos a tomar credenciales para poder interactuar con la cuenta de almacenamiento.
+# Los permisos son  (a)dd (c)reate (d)elete (l)ist (p)rocess (r)ead (u)pdate (w)rite (a)dd (c)reate (d)elete (l)ist (p)rocess (r)ead (u)pdate (w)rite.
+PERMISSIONS=cdlruwap
+
+# Los servicios para los que se concenden el acceso podrían ser: (b)lob (f)ile (q)ueue (t)able.
+SERVICES=b
+
+# Los tipos de recursos para los que solicitamos acceso podrían ser: (s)ervice (c)ontainer (o)bject.
+RESOURCE_TYPES=sco
+
+# Solicitamos de la clave SAS expire en 30 minutos (es el tiempo que tenemos para crear el contenedor y subir el archivo.)
+END=`date -u -d "30 minutes" '+%Y-%m-%dT%H:%MZ'`
+
+# Ejecutar el comando para obtener la SAS. Como es la primera vez, aparece una advertencia. A partir de ahora usaremos
+# el token SAS generado para autenticarnos desde la CLI
+STORAGE_ACCOUNT_SAS_TOKEN=$(az storage account generate-sas \
+                                --permissions $PERMISSIONS \
+                                --account-name $STORAGE_ACCOUNT_NAME \
+                                --services $SERVICES \
+                                --resource-types $RESOURCE_TYPES \
+                                --expiry $END \
+                                -o tsv)
+
+# Probamos
+echo $STORAGE_ACCOUNT_SAS_TOKEN
+
+# Creamos el contenedor de BLOB que será de tipo privado.
+BLOB_CONTAINER_NAME=uploadedfiles
+az storage container create \
+    --name $BLOB_CONTAINER_NAME \
+    --account-name $STORAGE_ACCOUNT_NAME \
+    --sas-token $STORAGE_ACCOUNT_SAS_TOKEN
+
+# El contenedor de BLOB creado se puede ver en la GUI en: 'Home / Resource groups / myaks-rg / <cuenta de almacenamiento> / $BLOB_CONTAINER_NAME'
+
+# Creamos un archivo de prueba par demostrar todo esto.
+cd ~/Hands-On-Kubernetes-on-Azure/Chapter09
+echo "Este es un archivo de texto almacenado en un BLOB en un contenedor de BLOBs de una cuenta de almacenamiento en Azure" > file.txt
+
+# Procedemos a subir el archivo a la cuenta de almacenamiento.
+FILENAME_IN_AZURE=file_in_Azure.txt
+az storage blob upload --file ./file.txt --container-name $BLOB_CONTAINER_NAME --name $FILENAME_IN_AZURE.txt  --account-name $STORAGE_ACCOUNT_NAME --sas-token $STORAGE_ACCOUNT_SAS_TOKEN
+
+# Vamos a intentar acceder al archivo desde un pod. Para ello crearemos un nuevo desployment que contendrá un vínculo con
+# la identidad administrada que creamos anteriormente. Editamos el archivo 'deployment-with-identity.yaml'
+code deployment-with-identity.yaml
+
+# Línea 13:     Se asocia el pod (creado por el deployment) con la identidad administrada. Cualquier pod con esa
+#               etiqueta (label) podrá acceder a la identidad administrada.
+#
+# Líneas 16-18: Se usará la imagen 'azure-cli' que proporcionará los comandos 'az' dentro del pod.
+
+# Creamos el deployment
+kubectl create -f deployment-with-identity.yaml
+
+# Comprobamos.
+kubectl get pods
+
+# Mostrar el valor de las variables. Necesitaremos copiarlas al pod.
+echo $CLIENT_ID
+echo $STORAGE_ACCOUNT_NAME
+echo $BLOB_CONTAINER_NAME
+echo $FILENAME_IN_AZURE
+
+
+# Cuando el pod esté iniciado abrimos una shell en él.
+kubectl exec -it <access-blob pod name> -- sh
+
+# IMPORTANTE!!!! DENTRO DEL POD.
+# Nos autenticamos con la API de Azure usando la identidad creada (El deployment permite usarla en los pods)
+az login \
+    --identity \
+    --username <CLIENT ID COPIADO ANTES> \
+    --allow-no-subscription \
+    -o table
+
+# Intentamos acceder con esa identidad al BLOB. Copiar y pegar las variables.
+FILENAME=file.txt
+az storage blob download \
+    --account-name <STORAGE_ACCOUNT_NAME> \
+    --container-name <BLOB_CONTAINER_NAME> \
+    --auth-mode login \
+    --name <FILENAME_IN_AZURE> \
+    --file $FILENAME \
+    -o table
+
+# Comprobamos que lo ha descargado sin problemas.
+ls -l file.txt
+cat file.txt
+
+# Salimos del pod
+exit 
+
+# Ahora volvemos a hacerlo mismo, pero con la diferencia que el deployment no incorpora la identidad administrada, por lo que
+# el pod NO PODRÁ acceder al BLOB.
+
+# Editamos el archivo 'deployment-without-identity'
+code deployment-without-identity.yaml
+
+# Comprobar que ya no existe la etiqueta 'aadpodidbinding: access-blob-id¡
+
+# Desplegamos
+kubectl create -f deployment-without-identity.yaml
+
+# Comprobamos
+kubectl get pods
+
+# Ejecutamos una shell en el contenedor.
+kubectl exec -it <no-access-blob pod name> -- sh
+
+# Intentamos autenticarnos en la API de Azure usando el mismo CLIENT-ID.
+# Fallará porque el deployment no ha asignado al pod dicha identidad administrada.
+az login \
+    --identity \
+    --username <CLIENT ID COPIADO ANTES> \
+    --allow-no-subscription \
+    -o table
+
+# Salimos del contenedor
+exit 
+
+# Borramos, pero no todo, porque necesitaremos el cluster configurado para poder
+# usar identidades administradas de Azure AD para acceder al 'Key Vault'
+
+# Eliminamos la identidad administrada que creamos.
+az aks pod-identity delete \
+    --resource-group myaks-rg \
+    --cluster-name myaks \
+    --namespace default \
+    --name access-blob-id
+
+# Eliminamos deployments.
+kubectl delete -f deployment-with-identity.yaml
+kubectl delete -f deployment-without-identity.yaml
+
+# Comprobamos.
+kubectl get all
+
+# Borramos la cuenta de almacenamiento.
+az storage account delete \
+    --name $STORAGE_ACCOUNT_NAME \
+    --resource-group myaks-rg \
+    --yes
+
+
+##########################################
+# Capítulo 10: Almacenar secretos en AKS #
+##########################################
+
+# Kubernetes tiene un sistema de secretos de serie que almacena secretos de una forma
+# semi encriptada en la base de datos por defecto de Kubernetes. Este sistema trabaja bien
+# pero no es la forma más segura de tratar con los secretos en Kubernetes.
+#
+# En AKS se puede hacer uso de 'Azure Key Vault provider for Secrets Store CSI Driver', que nos
+# permite acceder a los secretos almacenados en una instancia de Key Vault y usar la 
+# interfaz del driver 'Secrets Store CSI' para montarlos en los pods de Kubernetes.
+
+###################################
+# Tipos de secretos en Kubernetes #
+###################################
+
+# Kubernetes viene con una implementación de secretos por defecto, que almacenará  los secretos
+# en la base de datos 'etcd'. Los almacena codificados en Base64, que es una forma de codificar
+# los datos de una forma ofuscada pero no es una forma segura de realizar la encriptación.
+#
+# Cualquiera con acceso a los datos condificados en Base64 puede fácilmente decodificarlos. AKS
+# añade una capa de seguridad por encima de esta que consiste en la encriptación de los datos en
+# reposo en la plataforma Azure.
+#
+# La implementación de secretos por defecto en K8s nos permite almacenar diferentes tipos de secretos:
+#
+# Opaque secrets:                   Puede contener cualquier secreto o datos arbritarios definidos 
+#                                   por el usuario.
+#
+# Service account tokens:           Son usados por los pods de K8s en clústeres RBAC.
+#
+# Docker config secrets:            Se usan para almacenar las credenciales del registro de Docker.
+#   
+# Basic authentication secrets:     Son usados para almacenart información de autenticación en la forma de
+#                                   'username' y 'password'.
+#
+# SSH authentication secrets:       Se usan para almacenar las claves privadas SSH.
+#
+#       TLS certificates:           Almacenan certificados TLS/SSL.
+#
+#       Bootstrap token secrets:    Se usan para almacenar los 'bearer tokens' que se usan cuando se está
+#                                   creando un nuevo cluster o se está uniendo nuevos nodos a un cluster 
+#                                   existentes.
+#
+# Como usuario de K8s, normalmente trabajaremos con 'opaque secrets' y 'TLS certificates'.
+#
+# K8s proporciona tres formas de crear secretos:
+#
+#   1) Crear secretos desde archivos.
+#   2) Crear secretos desde definiciones YAML o JSON.
+#   3) Crear secretos desde la línea de comandos.
+#
+# K8s nos ofrece dos formas de consumir los secretos:
+#
+#   1) Usar los secretos como una variable de entorno.
+#   2) Montar los secretos en un archivo dentro del pod.
+
+#################################
+# Crear secretos desde archivos #
+#################################
+
+# La primera forma de crear secretos en Kubernetes es crearlos desde un archivo. De esta manera,
+# el contenido del archivo se convertirá en el valor del secreto, y el nombre del archivo será el
+# identificador de cada valor del secreto.
+
+# Supongamos que tenemos que almacenar una URL y un token seguro para el acceso a una API.
+cd ~/Hands-On-Kubernetes-on-Azure/Chapter10
+
+# Almacenamos la URL en el archivo 'secreturl.txt'
+echo https://my-url-location.topsecret.com > secreturl.txt
+
+# Almacenamos el token en otro archivo.
+echo 'superSecretToken' > secrettoken.txt
+
+# Hacemos que Kubernetes cree el secreto a partir de estos archivos.
+# El tipo de secreto que se va a crear es 'opaco' porque usamos 'generic' en el siguiente comando.
+kubectl create secret generic myapi-url-token --from-file=./secreturl.txt --from-file=./secrettoken.txt
+
+# Para ver los secretos.
+kubectl get secrets
+
+# El secreto de tipo opaco, significa que, desde la perspectiva de K8s, el esquema de los contenidos no
+# se conoce. Es una pareja clave-valor arbitraria, sin restricciones, a diferencia de, por ejemplo, los 
+# secretos TLS o la autenticación SSH, que tienen un esquema y se comprobará que dispongan de los 
+# detalles requeridos.
+
+# Describamos el secreto. Observar que no se muestran los secretos.
+kubectl describe secrets myapi-url-token
+
+# Para visualizar el valor del secreto, se ejecuta el siguiente comando.
+kubectl get -o yaml secrets/myapi-url-token
+
+# Los datos se almacenan como pareja clave-valor, con el nombre del archivo como clave y el valor como el
+# contenido de dicho archivo codificado en Base64.
+
+# Se puede hacer la decodificación para obtener los valores originales del secreto.
+echo '<PEGAR AQUÍ EL VALOR EN BASE64>' | base64 -d
+
+# Esto demuestra que los secretos no se almacenan de forma encriptada segura en el almacen de secretos
+# por defecto de Kubernetes.
+
+############################################
+# Crear secretos a partir de archivos YAML #
+############################################
+
+# Supongamos que necesitamos almacenar como secretos los dos datos anteriores: la URL y el token seguro, que
+# respectivamente eran:  'https://my-secret-url-location.topsecret.com' y  'superSecretToken'.
+# Lo primero que tenemos que hacer es codificarlo en base64.
+echo 'https://my-secret-url-location.topsecret.com' | base64
+echo 'superSecretToken' | base64
+
+# A continuación debemos editar un archivo YAML para definir los secretos. El achivo ya está creado. Lo editamos.
+code myfirstsecret.yaml
+
+# Línea 2:      Especifica que estamos creando un secreto.
+#
+# Línea 5:      Especifica que estamos creando un secreto opaco, es decir, que los valores son parejas clave-valor
+#               sin ningún tipo de restricción.
+#
+# Líneas 7-8:   Aquí se ponen las claves y los valores condificados en base64.
+
+# Para crear el secreto partiendo de un archivo YAML, escribirmos.
+kubectl create -f myfirstsecret.yaml
+
+# Comprobamos.
+kubectl get secrets
+
+# Podemos comprobar que los secretos son los mismos con el comando.
+kubectl get -o yaml secrets myapiurltoken-yaml
+
+##############################################
+# Crear secretos usando literales en kubectl #
+##############################################
+
+# Con este método creamos el secreto pasando el valor en la línea de comandos de kubectl.
+kubectl create secret generic myapiurltoken-literal \
+    --from-literal=token='superSecretToken' \
+    --from-literal=url=https://my-secret-url-location.topsecret.com
+
+# Comprobamos.
+kubectl get secrets
+
+#########################
+# Consumir los secretos #
+#########################
+
+# Kubernetes ofrece dos formas de usar los secretos: Por medio de variables de entorno o montando los secretos como archivos 
+# (Esta última es la más práctica)
+
+######################################
+# Secretos como variables de entorno #
+######################################
+
+# Editamos el archivo 'pod-with-env-secrets.yaml'
+code pod-with-env-secrets.yaml
+
+# Línea 9:      Aquí configuramos las variables de entorno que verá el pod.
+#
+# Línea 10-14 : Aquí se hace referencia al archivo 'secreturl.txt' almacenado en el secreto 'myapi-url-token'
+#
+# Línea 15-19 : Aquí se hace referencia al archivo 'secrettoken.txt' almacenado en el secreto 'myapi-url-token'
+
+# Cuando Kubernetes crea un pod en un nodo que necesita usar un secreto, almacenará el secreto en el 'tmpfs' de
+# dicho nodo. 'tmpfs' es un sistema de archivo temporal que reside en la memoria del nodo. Cuando el último pod
+# que referencia el sereto se elimina del nodo, el secreto es borrado del tmpfs de dicho nodo.
+
+# Creamos el pod.
+kubectl create -f pod-with-env-secrets.yaml
+
+# Verificamos que el pod está corriendo.
+kubectl get pods
+
+# Creamos una shell en el pod.
+kubectl exec -it secret-using-env -- sh
+
+# Comprobamos que el pod puede acceder a los secretos.
+echo $SECRET_URL
+echo $SECRET_TOKEN
+
+# Salimos del pod.
+exit 
+
+# Comentarios sobre este ejemplo:
+#
+#   1)  Nótese que cuando accedemos a las variable de entorno, lo que obtenemos es el valor real del secreto y no
+#       el valor codificado en base64. La codificación base64 solo se aplica en el nivel de la API de Kubernetes, 
+#       no en el nivel de la aplicación.
+#
+#   2)  Es importante aplicar los niveles correctos de RBAC a los pods, de forma que no todos los usuarios del 
+#       cluster sean capaces de hacer un 'exec' al contenedor y leer los secretos.
+#
+#   3)  Los secretos que se utilizan como variables de entorno tienen la limitación de que el valor de la variable
+#       no se actualizará si el propio secreto es actualizado en K8s.
+
+##########################
+# Secretos como archivos #
+##########################
+
+# Veamos como montar los mismos secretos como archivos en lugar de variables de entorno.
+# editamos el archivo 'pod-with-vol-secret.yaml'.
+code pod-with-vol-secret.yaml
+
+# Líneas 9-12:  Proporcionamos los detalles del montaje. Se monta en el contenedor en '/etc/secrets' en
+#               forma de solo lectura.
+#
+# Líneas 13-16: Aquí se hace referencia al secreto. Nótese que ambos archivos del secreto serán montados en
+#               el directorio del contenedor.
+#
+# Las aplicaciones necesitan tener código para leer los contenidos del archivo para cargar el secreto.
+
+# Creamos el pod.
+kubectl create -f pod-with-vol-secret.yaml
+
+# Verificamos que el pod está corriendo.
+kubectl get pods
+
+# Creamos una shell en el contenedor.
+kubectl exec -it secret-using-volume -- sh
+
+# Mostramos los contenidos de los archivos que se han montado.
+cd /etc/secrets/
+cat secreturl.txt
+cat secrettoken.txt
+
+# Salimos del contenedor.
+exit 
+
+# Comentarios sobre este ejemplo:
+#
+#   1)  Nótese que de nuevo los secretos están en texto en claro, no en base64.
+#
+#   2)  Como los secretos se montan como un archivo, se aplican los permisos de archivo a estos secretos.
+#       Esto significa que podemos controlar qué procesos tienen acceso a los contenidos de estos archivos en
+#       base a los mencionados permisos.
+#
+#   3)  Los secretos montados como archivos serán actualizados dinámicamente conforme se actualice el secreto.
+
+
+##############################################################
+# Por qué usar secretos montando archivos es el mejor método #
+##############################################################
+
+# Aunque es una práctica común usar secretos en variables en entorno, es más seguro montar los secretos como 
+# archivos. Kubernetes trata los secretos en variable de entorno de forma segura, cosa que no hace el runtime. 
+# Verifiquemos esto.
+
+# Empezamos obteniendo el nodo del pod que usaba las variables de entorno del ejemplo anterior.
+# El nodo tiene la forma 'vmssXXXXXXX', por ejemplo 'vmss000000', quedarse con el número '000000'
+kubectl describe pod secret-using-env | grep Node
+
+# Ahora tomamos el identificador de contenedor que corre en el pod.
+# que será algo así: 'bfafc5ef02e1fa843ed182ee5a2a72f27c77b22bd20368a2dd44719e5a0f2c23'
+kubectl describe pod secret-using-env | grep 'Container ID'
+
+# Ejecutaremos un comando en el nodo que está ejecutando el contenedor para mostrsr el secreto que se ha 
+# pasado como variable de entorno. Para ello cargamos una variables que usaremos luego.
+NODE_INSTANCE_ID=000000
+CONTAINER_ID=bfafc5ef02e1fa843ed182ee5a2a72f27c77b22bd20368a2dd44719e5a0f2c23
+NODE_RESOURCE_GROUP=$(az aks show \
+                        --resource-group myaks-rg \
+                        --name myaks \
+                        --query nodeResourceGroup \
+                        -o tsv)
+VMSS=$(az vmss list \
+        --resource-group $NODE_RESOURCE_GROUP \
+        --query '[].name' \
+        -o tsv)
+
+# A partir de la v1.19, K8s usa containerd como runtime y no Docker.
+az vmss run-command invoke \
+    --resource-group $NODE_RESOURCE_GROUP \
+    --name $VMSS \
+    --command-id RunShellScript \
+    --instance-id $NODE_INSTANCE_ID \
+    --scripts "crictl inspect --output yaml $CONTAINER_ID" \
+    -o yaml | grep SECRET
+
+# Como puede verse, los secretos se desdodifican en el comando del runtime de contenedores. 
+# Esto significa que la mayoría de los sistemas de logging registrarán estos secretos. Por ello, 
+# se recomienda usar secretos en archivos porque solo se pasan en texto en claro al pod y a la aplicación.
+
+# Limpiamos los recursos.
+kubectl delete pod --all
+kubectl delete secret myapi-url-token myapiurltoken-literal myapiurltoken-yaml
+
+###############################################################################
+# Instalar el proveedor de Key Vault para el drive CSI de almacén de secretos #
+###############################################################################
+
+# En la sección anterior, hemos visto que los secretos se almacenan de forma nativa en K8s
+# codificados en base64, y que esto no es suficientemente seguro, al no estar encriptados.
+# Para entornos altamente seguros, querremos usar un mejor almacén de secretos.
+
+# Azure ofrece una solución de almacenamiento de secretos llamada 'Azure Key Vault'. Es un 
+# servicio administrado que hace que la creación, el almacenamiento y la recuperación de
+# claves y secretos sea sencilla. Ofrece auditoría de acceso a las claves y secretos.
+
+# La comunidad de K8s mantiene un proyecto llamado 'Kubernetes Secrets Store CSI driver', que
+# permite integrar almacenes de secretos externos con volúmenes a través del driver CSI (Container
+# Storage Interface). Los más habituales son Hashicorp Vault, Google Cloud Platform y Azure
+# Key Vault.
+
+# Microsoft mantiene la implementación del Key Vault para el driver CSI, llamada 'Azure Key Vault 
+# provider for Secrets Store CSI driver'. Esta implementación te permite, como usuario acceder a
+# los secretos del Key Vault desde dentro de Kubernetes.
+
+# Lo primero que necesitamos hacer es configurar el driver CSI en el cluster. Posteriormente, 
+# necesitaremos crear un objeto en K8s, llamado 'SecretProviderClass' por cada secreto del Key Vault
+# al que necesites acceder.
+
+####################################
+# Crear una identidad administrada #
+####################################
+
+# El driver CSI para el Key Vault soporta diferentes formas de obtener datos del Key Vault. Es 
+# recomendable usar una identidad administrada para enlazar el cluster de K8s con el Key Vault.
+
+# ¡¡¡¡¡¡IMPORTANTE!!!!!!!
+# Para ello necesitamos instalar el complemento de identidad administrada de pod para Azure AD.
+# Esto ya lo hicimos en el apartado 'Configurar un cluster con identidades de pod aministradas de Azure AD'.
+# Si se ha reconstruido el cluster es necesario volver a hacerlo. 
+
+########################################
+# Crear y asociar identidad al cluster #
+########################################
+
+# Para empezar, vamos a crear una nueva identidad administrada asignada por el usuario en Azure.
+az identity create --resource-group myaks-rg --name csi-to-key-vault --location westeurope 
+
+# En la GUI se puede ver la identidad administrada en Home / Managed Identities / csi-to-key-vault
+
+# Una vez creada, necesitamos copiar el 'Principal ID' (identificador único de la identidad en AAD)
+# y el 'id' (identificador del recurso), que serán usados en breve.
+PRINCIPAL_ID=$(az identity show \
+                --resource-group myaks-rg \
+                --name csi-to-key-vault \
+                --query principalId \
+                -o tsv)
+RESOURCE_ID=$(az identity show \
+                --resource-group myaks-rg \
+                --name csi-to-key-vault \
+                --query id \
+                -o tsv)
+
+# Comprobamos
+echo $PRINCIPAL_ID
+echo $RESOURCE_ID
+
+# Ahora estamos preparados para asociar la identidad administrada al cluster AKS.
+az aks pod-identity add \
+    --resource-group myaks-rg \
+    --cluster-name myaks \
+    --namespace default \
+    --name csi-to-key-vault \
+    --identity-resource-id $RESOURCE_ID
+
+# Podemos comprobar que la identidad ha sido asignada al cluster y está disponible para su uso, con este comando.
+kubectl get azureidentity
+
+######################
+# Crear un Key Vault #
+######################
+
+# El nombre del Key Vault debe ser único globalmente.
+KEY_VAULT_NAME=myKeyVaultASG20220116
+az keyvault create \
+    --resource-group myaks-rg \
+    --name $KEY_VAULT_NAME \
+    --location westeurope
+
+# Asignamos la política de acceso al vault para la identidad administrada. 
+# Damos el permiso 'get' para los secretos.
+az keyvault set-policy \
+    --name $KEY_VAULT_NAME \
+    --object-id $PRINCIPAL_ID \
+    --secret-permissions get
+
+# Creamos un secreto.
+az keyvault secret set \
+    --name k8s-secret-demo \
+    --vault-name $KEY_VAULT_NAME \
+    --value "Secreto proveniente del key vault"
+
+########################################### 
+# Instalar el drive CSI para el Key Vault #
+###########################################
+
+# Vamos a configurar el drive CSI en el cluster. Esto va a permitirnos recuperar los secretos posterioremente.
+
+# La mejor forma de instalar del driver CSI es usar Helm.
+helm repo add csi-secrets-store-provider-azure  https://raw.githubusercontent.com/Azure/secrets-store-csi-driver-provider-azure/master/charts
+
+# ¡¡¡¡¡¡¡IMPORTANTE!!!!! Es necesario llamar a helm con el valor '--set secrets-store-csi-driver.syncSecret.enabled=true'	
+# Porque de lo contrario no sincroniza los secretos del Key Vault con los de Kubernetes. En ese caso pod no se 
+# iniciará porque no encuentra el secreto en K8s. Ver ayuda de este parámetro en:
+# https://github.com/Azure/secrets-store-csi-driver-provider-azure/tree/master/charts/csi-secrets-store-provider-azure
+helm install csi-secrets-store-provider-azure/csi-secrets-store-provider-azure \
+    --generate-name \
+    --set secrets-store-csi-driver.syncSecret.enabled=true	
+
+# Comprobamos que la instalación es correcta verificando que la 'SecretProviderClass CRD' ha sido añadida al cluster.
+# CRD = Custom Recource Definition.
+kubectl get crd
+
+##################################################
+# Montar un secreto de la Key Vault como archivo #
+##################################################
+
+# Necesitamos saber el ID del tenant.
+TENANT_ID=$(az account show --query tenantId)
+
+# Comprobamos.
+echo $TENANT_ID
+echo $KEY_VAULT_NAME
+
+# Ahora necesitamos crear un objeto 'SecretProviderClass'. Editamos el archivo 'secretproviderclass-file.yaml'
+code secretproviderclass-file.yaml
+
+# Línea 2:      Indicamos que estamos creando un objeto 'SecretProviderClass'.
+#
+# Línea 6:      El proveedor del almacen de secretos es Azure (Key Vault)
+#
+# Línea 8:      Indicamos que usaremos identidad administrada de pod para la autenticación. El pod lo añadimos después.
+#
+# Línea 9:      ¡¡¡¡¡¡¡IMPORTANTE!!!!!! Poner el nombre de la la Key Vault.
+#
+# Líneas 10-14: Indicamos el nombre del secreto al que se quiere acceder. 
+#
+# Línea 15:     ¡¡¡¡¡¡¡IMPORTANTE!!!!!! Poner el id del tenant.
+
+# Guardamos los cambios.
+
+# Creamos el objeto.
+kubectl create -f secretproviderclass-file.yaml
+
+# Ahora creamos el pod. Editar el archivo 'pod-keyvault-file.yaml'
+code pod-keyvault-file.yaml
+
+# Líneas 5-6:   Aquí enlazamos el pod con la identidad que creamos antes.
+#
+# Líneas 11-14: Definimos donde queremos montar los secretos.
+#
+# Líneas 15-21: Definimos el volumen y el enlace al Key Vault a traves del objeto de la clase
+#               'SecretProviderClass' que creamos antes.
+
+# Creamos el pod.
+kubectl create -f pod-keyvault-file.yaml
+
+# Comprobamos
+kubectl get pods
+
+# Una vez que el pod se ha creado, abrimos una shell en el contenedor.
+kubectl exec -it csi-demo-file -- sh
+
+# Probamos.
+cd /mnt/secrets-store
+cat k8s-secret-demo
+
+# Salimos del contenedor.
+exit
+
+###########################################################
+# Usar un secreto de la Key Vault con variable de entorno #
+###########################################################
+
+# Es posible sincronizar secretos de la Key Vault con los secretos de Kubernetes y usarlos en
+# variables de entorno visibles para el pod. 
+
+# Es importante observar que, con la idea de que el driver CSI sincronice los secretos del 
+# Key Vault con los secretos de Kubernetes, necesitamos montar el secreto como un volumen en
+# Kubernetes.
+
+# Mostramos para copiar.
+echo $TENANT_ID
+echo $KEY_VAULT_NAME
+
+# Editamos el archivo 'secretproviderclass-env.yaml'
+code secretproviderclass-env.yaml
+
+# Línea 9:      ¡¡¡¡¡¡IMPORTANTE!!!!!! Poner el nombre del Key Vault.
+#
+# Línea 15:     ¡¡¡¡¡¡IMPORTANTE!!!!!! Pner el Id del tenant.
+#
+# Las diferencias respecto al ejemplo anterior las encontramos en:
+#
+# Líneas 16-21: Aquí es donde se enlaza el secreto del Key Vault con el secreto de Kubernetes.
+#
+# Línea 17:     'secretName' es el nombre del secreto que se creará en Kubernetes.
+#
+# Línea 20:     'objectName' Se refiere al nombre del secreto en el Vault, el que aparece en la línea 13.
+#
+# Línea 21:     'key' es el nombre de la clave en el secreto de Kubernetes.
+
+# Creamos el objeto 'SecretProviderClass'.
+kubectl create -f secretproviderclass-env.yaml
+
+# Editamos el archivo 'pod-keyvault-env.yaml'
+code pod-keyvault-env.yaml
+
+# La diferencia entre este y el anterior están en las líneas 11 a 16.
+
+# Creamos el pod.
+kubectl create -f pod-keyvault-env.yaml
+
+# Ejecutamos una shell en el pod.
+kubectl exec -it csi-demo-env -- sh
+
+# Probamos si se puede leer el secreto como una variable de entorno.
+echo $KEYVAULT_SECRET
+
+# Salimos del contenedor.
+
+# Se puede comprobar que el secreto 'key-vault-secret' fue creado en Kubernetes.
+kubectl get secret
+
+# El secreto desaparecerá cuando ningún pod que monte el secreto esté presente.
+kubectl delete -f pod-keyvault-env.yaml
+kubectl get secret
+
+# Esto demuestra que aunque tehgamos un objeto 'SecretProviderClass' que intente 
+# sincronizar el secreto de la Key Vault con el secreto de Kubernetes, esa sicronización 
+# solo ocurre una vez que un pod referencia la SecretProviderClass' y monta el secreto.
+
+# Limpiamos los recursos.
+kubectl delete -f .
+helm delete csi-secrets-store-provider-azure/csi-secrets-store-provider-azure
+az aks pod-identity delete \
+    --resource-group myks-rg \
+    --cluster-name myaks \
+    --namespace default \
+    --name csi-to-key-vaultt
+
+# Eliminar la Key Vault. El siguiente comando la pone en estado soft-delete.
+az keyvault delete \
+    --resource-group myaks-rg \
+    --name $KEY_VAULT_NAME 
+
+# Eliminamos definitivamente la Key Vault.
+az keyvault purge \
+    --name $KEY_VAULT_NAME \
+    --location westeurope \
+    --no-wait
+
+
+###########################################
+# Capítulo 11: Seguridad de la red en AKS #
+###########################################
+
+# Cuando hablamos de la seguridad de la red en AKS, hay dos capas diferentes que debemos
+# asegurar:
+#
+# Control plane:        Nos referimos a los servidores maestros (masters) que exponen la API
+#                       de Kubernetes. Por defecto, el Control Plane está expuesto en Internet.
+#
+#                       Podemos asegurar el Control Plane limitando las direcciones IP públicas 
+#                       que pueden acceder a él, por medio de una característica llamada 
+#                       "Authorized IP ranges".
+#
+#                       También se puede proteger desplegando un cluster privado, lo que significa
+#                       que solo las máquinas conectadas a la red virtual pueden acceder al
+#                       Control Plane.
+#
+# Asegurar Workloads:   La segunda capa de red a asegurar son las cargas que se ejecutan en el
+#                       cluster. Se puede hacer por medio del Firewall de Azure o los NSGs
+#                       (Network Security Groups). Alternativamente, se puede hacer lo mismo 
+#                       usando una funcionalidad de K8s llamada "Network Policies"
+
+# Debido a que la mayoría de las configuraciones de red de un cluster AKS son solamente configurables
+# durante la creación del cluster, crearemos y destruiremos varios clusters en estos ejemplos.
+
+##################################
+# Networking en el Control Plane #
+##################################
+
+# El Control Plane (CP) de un cluster de K8s es la infraestructura que mantiene el API Server
+# del cluster, administra el planificador y almacena el estado del cluster. Cuando usamos 'kubectl'
+# estamos enviando comandos al API server. En AKS, el CP es administrado por Microsoft y 
+# se nos ofrece como un servicio.
+
+# Por dececto, el CP se expone en Internet y es accesible a todo el mundo. Para asegurarlo tenemos
+# dos posibilidades
+
+# La primera se llama "Authorized IP address ranges". Establecemos desde qué direcciones IPs
+# se va a permitir la conexión al CP. La otra posibilidad, que ya mencionamos, consiste en usar
+# la característica llamada "Private Cluster".
+
+# Un cluster privado no expone al CP a ninguna IP pública, siendo solamente accesible desde las 
+# máquinas que esté conectadas a una red privada (subred de VNet) o desde la red local on-prem, 
+# enrutada a la VNet.
+
+# La protección de las cargas se determina en función de la configuración de red del cluster.ç
+# Tenemos dos opciones:
+#
+# Kubenet networking (Por defecto)
+# --------------------------------
+#
+# Los nodos del cluster adquieren una dirección IP de una subred de la VNet. Los pods que corren
+# en esos nodos adquieren una IP de una red de overlay, que usa diferentes espacios de direcciones
+# de los nodos. La comunicación entre pods se efectúa por medio de NAT. Este tipo de networking 
+# tiene la ventaja de que solo los nodos consumen una IP de la subred del cluster.
+
+# Azure Container Network Interface (CNI) networking (Avanzada)
+# -------------------------------------------------------------
+#
+# Con Azure CNI, tanto los pods como los nodos obtiene una IP de la subred del cluster. La ventaja
+# es que los pods pueden ser accedidos directamente desde fuera del cluster. La contrapartida
+# es que debemos ejecutar una planificación muy precisa del direccionamiento IP.
+
+# En ambos modelos, podemos crear el cluster en una VNet existente, o dejar que AKS cree la VNet
+# de nuestra parte.
+
+# La segunda configuración de seguridad de red es considerar el enrutamiento del trafico entrante
+# y saliente a través de un firewall externo. Éste puede ser Azure Firewall o de terceros a través
+# de una NVA (Network Virtual Applicance).
+
+# Al enrutar el tráfico por un firewall externo, podemos aplicar reglas de seguridad centralizadas,
+# hacer inspección del tráfico y registrarlo. Esto se consigue por medio de una UDR (User-Defined Route)
+# en la subred del cluster, que enruta el trafico del cluster a través del firewall externo.
+
+# Con los Network Security Groups (NSGs) también se puede limitar el tráfico entrante y saliente. Por
+# defecto, cuando creamos un servicio del tipo 'LoadBalancer', AKS configurará un NSG para permitir
+# el tráfico desde cualquier sitio hacia ese servicio.
+
+# Por último, podemos limitar el tráfico en el cluster usando una característica de K8s llamada 
+# "Network Policies" (NP). Una NP es un objeto que nos permite configurá qué tráfico se acepta en
+# pods concretos. Con las NPs se puede asegurar el tráfico de pod a pod, el tráfico externo hacia el pod,
+# y el tráfico que va desde el pod hasta el exterior.
+
+# Es buena práctica usar NPs principalmente para controlar el tráfico entre pods (que se suele llamar
+# tráfico este-oeste), y usar un firewall externo o NSGs para el tráfico externo hacia los pods y el 
+# de los pods hacia el exterior (tráfico norte-sur)
+
+# AKS soporta dos opciones relacionadas con la configuración de las NPs. 
+#
+# 1) Usar políticas de red de Azure.
+#
+# 2) Usar políticas de red de Cálico, desarrolladas como open-source por Tigera.
+
+############################################################
+# Asegurar el Control Plane usando rangos de IPs admitidas #
+############################################################
+
+# En esta configuación, se limitará qué direcciones IPs pueden acceder al CP. 
+#
+# La práctica consistirá en limitar el acceso desde una IP pública aleatoria y verificar
+# que ya no tenemos acceso al CP. Posteriormente autorizaremos la IP desde la que estamos
+# conectados y volveremos a tener acceso al CP.
+
+# Habilitamos la conexión desde la IP "1.2.3.4" al API Server. Esta configuración se puede hacer
+# desde la GUI en: Home / Kubernetes Services / myaks / Networking / Set Authorized IP ranges. 
+az aks update --resource-group myaks-rg --name myaks --api-server-authorized-ip-ranges  1.2.3.4
+
+# Comprobamos que la configuración se ha aplicado.
+az aks show --resource-group myaks-rg --name myaks  --query apiServerAccessProfile
+
+# Intentamos acceder al cluster desde nuestra IP. API Server no responde. CTRL+C para salir.
+kubectl get nodes
+
+# Obtenemos nuestra IP pública.
+PUBLIC_IP=$(curl icanhazip.com)
+
+# La comprobamos
+echo $PUBLIC_IP
+
+# Autorizamos a nuestra IP Pública a contactar con del Control Plane.
+az aks update \
+    --resource-group myaks-rg \
+    --name myaks \
+    --api-server-authorized-ip-ranges $PUBLIC_IP
+
+# Comprobamos que la configuración se ha aplicado.
+az aks show \
+    --resource-group myaks-rg \
+    --name myaks \
+    --query apiServerAccessProfile
+
+# Intentamos acceder al cluster desde nuestra IP. Debe funcionar.
+kubectl get nodes
+
+#######################################################
+# Asegurar el Control Plane usando un cluster privado #
+#######################################################
+
+# La mejor forma de bloquear el acceso al CP es crear un cluster privado, que se caracteriza porque
+# solo podemos alcanzarlo desde una conexión privada (Azure Private Link)
+
+# La característica de cluster privado solo puede habilitarse en el momento de creación del cluster.
+# Así que debemos eliminar el actual.
+az aks delete \
+    --name myaks \
+    --resource-group myaks-rg \
+    --yes
+
+# Vamos a crear un nuevo cluster, pero en este caso necesitamos crear una VNet previamente.
+# Creamos la VNet.
+az network vnet create \
+    -o table \
+    --resource-group myaks-rg \
+    --name myaksvnet \
+    --address-prefixes 192.168.0.0/16 \
+    --subnet-name akssubnet \
+    --subnet-prefix 192.168.0.0/24
+
+# Necesitamos capturar el ID de la subred que hemos creado.
+VNET_SUBNET_ID=$(az network vnet subnet show \
+                    --resource-group myaks-rg \
+                    --vnet-name myaksvnet \
+                    --name akssubnet \
+                    --query id -o tsv)
+
+# Comprobamos
+echo $VNET_SUBNET_ID
+
+# También necesitaremos una identidad administrada que tenga permisos para crear recursos en la 
+# subred que acabamos de crear.
+az identity create \
+    --name myaksvnet-mi \
+    --resource-group myaks-rg
+
+# Obtenemos el 'ClientId' (Service Principal) de la identidad administrada.
+IDENTITY_CLIENTID=$(az identity show \
+                        --name myaksvnet-mi \
+                        --resource-group myaks-rg \
+                        --query clientId -o tsv)
+
+# Comprobamos
+echo $IDENTITY_CLIENTID
+
+# Concedemos acceso de 'contribuidor' a la identidad administrada a la subred.
+az role assignment create \
+    --assignee $IDENTITY_CLIENTID \
+    --scope $VNET_SUBNET_ID \
+    --role Contributor
+
+# Obtenemos el ID (Identificador de recurso) de la identidad administrada.
+IDENTITY_ID=$(az identity show \
+                --name myaksvnet-mi \
+                --resource-group myaks-rg \
+                --query id -o tsv)
+
+# Comprobamos
+echo $IDENTITY_ID
+
+# Creamos el cluster, asignándole la identidad administrada creada anteriormente.
+# Para crear el cluster privado hay que usar el parámetro 'enable-private-cluster'.
+az aks create \
+    --resource-group myaks-rg \
+    --name myaks \
+    --vnet-subnet-id $VNET_SUBNET_ID \
+    --enable-managed-identity \
+    --assign-identity $IDENTITY_ID \
+    --enable-private-cluster \
+    --node-count 1 \
+    --node-vm-size Standard_DS2_v2 \
+    --generate-ssh-keys
+
+# Descargamos las credenciales del cluster.
+az aks get-credentials \
+    --name myaks \
+    --resource-group myaks-rg \
+    --overwrite-existing
+
+# ¡¡¡¡¡¡¡¡IMPORTANTE!!!!!!!!! 
+# Mostramos los nodos. Esto devolverá un ERROR porque todavía no hemos habilitado 
+# la conexión privada desde la CLI al endpoint del vínculo privado.
+kubectl get nodes
+
+# AKS usará un servicio llamado 'Vínculo privado' (Private Link) para que 
+# se pueda acceder al Control Plane desde la VNet.
+# En la GUI, se puede ver en: Home / Private Link Center / Private endpoints / kube-apiserver.
+
+# Para mostrarlo con la CLI, primero debemos tomar el nombre del grupo de recursos donde está el VMSS
+export vmssRG=$(az aks show \
+                    --name myaks \
+                    --resource-group myaks-rg \
+                    --query nodeResourceGroup \
+                    -o tsv)
+
+# Lo comprobamos.
+echo $vmssRG
+
+# Ahora listamos los endpoints existentes.
+# Al crear el cluster, se crea un endpoint de vínculo privado.
+
+# Para mostrar el nombre:
+PRIVATE_LINK_NAME=$(az network private-endpoint list \
+                        --resource-group $vmssRG \
+                        --query [].name \
+                        -o tsv)
+
+# Comprobamos
+echo $PRIVATE_LINK_NAME
+
+# Para mostrar el recurso al que se puede acceder por medio del vínculo privado (el cluster AKS)
+az network private-endpoint show \
+    --name $PRIVATE_LINK_NAME \
+    --resource-group $vmssRG \
+    --query privateLinkServiceConnections[].privateLinkServiceId \
+    -o tsv
+
+# Para ver el subrecurso al que se puede acceder desde el enpoint (management = API Server)
+az network private-endpoint show \
+    --name $PRIVATE_LINK_NAME \
+    --resource-group $vmssRG \
+    --query privateLinkServiceConnections[].groupIds\
+    -o tsv
+
+# Para ver la subred desde la que podemos conectar:
+az network private-endpoint show \
+    --name $PRIVATE_LINK_NAME \
+    --resource-group $vmssRG \
+    --query subnet.id \
+    -o tsv
+
+# Para ver el estado de conexión del Endpoint:
+az network private-endpoint show \
+    --name $PRIVATE_LINK_NAME \
+    --resource-group $vmssRG \
+    --query privateLinkServiceConnections[].privateLinkServiceConnectionState.status \
+    -o tsv
+
+# Para saber la IP del endpoint, primero debemos referenciar el objeto NIC.
+AKS_NIC=$(az network private-endpoint show \
+            --name $PRIVATE_LINK_NAME \
+            --resource-group $vmssRG \
+            --query networkInterfaces[].id \
+            -o tsv)
+
+# Mostramos la NIC
+echo $AKS_NIC
+
+# Mostramos la IP privada de la NIC.
+az network nic show \
+    --ids $AKS_NIC \
+    --query ipConfigurations[].privateIpAddress \
+    -o tsv
+
+# En resumen y en este punto, el endpoint privado creado es:
+# Nombre:       kube-apiserver
+# Recurso:      myaks
+# Sub recurso:  management
+# Subred:       myaksvnet/akssubnet
+# IP Privada:   192.168.0.4
+
+
+# El vínculo privado crea una zona de DNS privada de Azure y un registro A para asociar el nombre
+# DNS del cluster con la IP privada del endpoint.
+
+# Obtenemos el nombre de la zona privada de DNS.
+AKS_PRIVATE_ZONE_NAME=$(az network private-dns zone list --resource-group $vmssRG --query [].name -o tsv)
+
+# La mostramos.
+echo $AKS_PRIVATE_ZONE_NAME
+
+# Para ver el nombre del registro A del endpoint:
+az network private-dns record-set a list \
+    --resource-group $vmssRG \
+    --zone-name $AKS_PRIVATE_ZONE_NAME \
+    --query [].name \
+    -o tsv
+
+# Que apunta a:
+az network private-dns record-set a list \
+    --resource-group $vmssRG \
+    --zone-name $AKS_PRIVATE_ZONE_NAME \
+    --query [].aRecords[].ipv4Address \
+    -o tsv
+
+# Para establecer una conexión privada al Control Plane, crearemos una nueva máquina virtual
+# y nos conectaremos desde ella. La VM irá en una nueva subred. Esta máquina virtual la 
+# crearemos en un grupo de recursos diferente para facilitar su eliminación posteriormente.
+
+# Algo como esto.
+#
+#
+#   VNet myaksvnet
+#       |
+#       |       VM
+#       |       |
+#       |------------------------------------------- vmsubnet (192.168.1.0/24)
+#       |
+#       |--------------------------------------------akssubnet(192.168.0.0/24)
+#       |       |
+#       |    Private Endpoint (192.168.0.4)
+#                       |
+#                       |------------------------ (AKS Control Plane)
+
+
+# Creamos una nueva subnet 'vmsubnet' (192.168.1.0/24) en la VNet 'myaksvnet'
+az network vnet subnet create \
+    --resource-group myaks-rg \
+    --vnet-name myaksvnet \
+    --name vmsubnet \
+    --address-prefix 192.168.1.0/24
+
+# Tomamos el ID de recurso de la nueva subred.
+VM_SUBNET_ID=$(az network vnet subnet show \
+                --resource-group myaks-rg \
+                --vnet-name myaksvnet \
+                --name vmsubnet \
+                --query id \
+                -o tsv)
+
+# Comprobamos
+echo $VM_SUBNET_ID
+
+# Creamos el grupo de recursos para contener los objetos de la nueva VM.
+az group create \
+    --location westeurope \
+    --name myaksvm-rg
+
+# Creamos la VM en el nuevo grupo de recurso y la conectamos a la subred 'vmsubnet'.
+# Accederemos a la VM por medio de claves SSH.
+az vm create \
+    --name vm-myaks \
+    --resource-group myaksvm-rg \
+    --image UbuntuLTS \
+    --admin-username azureuser \
+    --ssh-key-values ~/.ssh/id_rsa.pub \
+    --subnet $VM_SUBNET_ID \
+    --size Standard_D2_v2
+
+# Esperar a que se cree la VM.`
+
+# Necesitamos conocer la IP pública que Azure ha asignado a la VM.
+# Lo primero es referenciar a su NIC.
+VM_MYAKS_NIC_ID=$(az vm show \
+                    --name vm-myaks \
+                    --resource-group myaksvm-rg \
+                    --query networkProfile.networkInterfaces[].id \
+                    -o tsv)
+
+# Comprobamos
+echo $VM_MYAKS_NIC_ID
+
+# Refenciamos la IP pública asignada a la NIC.
+VM_MYAKS_PUBLIC_IP=$(az network nic show \
+                        --ids $VM_MYAKS_NIC_ID \
+                        --query ipConfigurations[].publicIpAddress.id \
+                        -o tsv)
+
+# Comprobamos.
+echo $VM_MYAKS_PUBLIC_IP
+
+# Mostramos el campo 'ipAddress'.
+VM_MYAKS_IP_ADDRESS=$(az network public-ip show \
+                        --ids $VM_MYAKS_PUBLIC_IP \
+                        --query ipAddress \
+                        -o tsv)
+
+# Comprobamos.
+echo $VM_MYAKS_IP_ADDRESS
+
+# Ahora que la VM está creada, debemos mover el archivo de configuración de Kunernetes que 
+# contiene las credenciales del cluster a dicha VM. Esto nos evita tener que instalar 
+# la Azure CLI en la VM para obtener estas credenciales.
+scp ~/.kube/config azureuser@$VM_MYAKS_IP_ADDRESS:~
+
+# Ahora accedemos por ssh a la VM.
+ssh azureuser@$VM_MYAKS_IP_ADDRESS
+
+# Debemos estar dentro de la VM 'vm-myaks'. Descargamos 'kubectl'
+curl -LO https://dl.k8s.io/release/v1.20.0/bin/linux/amd64/kubectl
+chmod +x kubectl
+sudo mv ./kubectl /usr/local/bin/kubectl
+
+# Para que 'kubectl' reconozca el archivo de configuración debemos moverlo al directorio
+# 'kube'
+mkdir .kube
+mv config .kube/config
+
+# Comprobamos que podemos administrar el cluster.
+kubectl get nodes
+
+# También podemos verificar el registro DNS que está usando la VM para conectar con
+# el cluster. Debe ser algo así: 
+# 'myaks-myaks-rg-5d72e1-8b79bb50.daad3309-01ea-4c31-80b9-3f67229041fa.privatelink.westeurope.azmk8s.io'
+
+# Ahora verificamos el registro A, que debe resolverse a 192.168.0.4 (es el Endpoint del Private Link)
+nslookup myaks-myaks-rg-5d72e1-8b79bb50.daad3309-01ea-4c31-80b9-3f67229041fa.privatelink.westeurope.azmk8s.io
+
+# Hemos comprobado que el Control Plane solo es accesible desde la VM, que se conecta al endpoint.
+# Salimos y volvemos a la consola de nuestro equipo. 
+# ¡¡¡¡¡¡¡¡¡IMPORTANTE!!!!!!!
+# Desde ella NO SE PUEDE acceder al Control Plane. Tampoco funcionará la conexión desde la 'Cloud Shell',
+# ya que sus IPs no está en la subnet que puede conectar con el endpoint (192.168.0.4)
+kubectl get nodes
+
+#######################################
+# Seguridad en la red para las cargas #
+#######################################
+
+# Este apartado necesita el cluster y la VM anterior.
+
+# En esta sección exploraremos las tres vias mediante la cuales podemos proteger
+# las aplicaciones (workloads). En primer lugar crearemos un servicio usando un 
+# balanceador INTERNO de Azure. Protegeremos el tráfico por medio de NSGs y, por
+# último usaremos las Políticas de Red para asegurar el tráfico pod-a-pod.
+
+# En capítulos anteriores ya hemos usado el servicio de tipo 'LoadBalancer', pero
+# siempre han sido balanceadores públicos. Podemos configurar AKS para que use 
+# balanceadores internos. Esto es útil cuando estás creando un servicio que solo
+# necesita ser accedido desde dentro de una VNet o desde redes conectadas a esa
+# VNet.
+
+# Reconectamos con la VM.
+ssh azureuser@$VM_MYAKS_IP_ADDRESS
+
+# Recuperamos el repositorio git con los ejemplos.
+cd ~
+git clone https://github.com/PacktPublishing/Hands-on-Kubernetes-on-Azure-Third-Edition
+
+# Entramos al directorio de los ejemplos
+cd ~/Hands-On-Kubernetes-on-Azure/Chapter11
+
+# Usaremos la aplicación 'GuestBook'. El archivo yaml original ha sido dividido en dos
+# archivos: 'guestbook-without-service.yaml' y 'front-end-service-internal.yaml' para
+# aclarar los conceptos.
+
+# Abrimos el archivo 'front-end-service-internal.yam', que contiene la configuración
+# para crear un servicio de Kubernetes usando un balanceador interno de Azure.
+nano front-end-service-internal.yaml
+
+# Se están usando anotaciones en el archivo YAML:
+# 'service.beta.kubernetes.io/azure-load-balancer-internal:"true"
+# para indicar a AKS que cree un balanceador interno de Azure.
+
+# Desplegamos la aplicación y el servicio.
+kubectl create -f guestbook-without-service.yaml
+kubectl create -f front-end-service-internal.yaml
+
+# Esperamos que el servicio adquiera una IP externa (Por ejemplo 192.168.0.6)
+kubectl get service -w
+
+# Esta IP Externa es privada. Solo se puede acceder a él desde la subred en la que
+# se desplegó el cluster o desde cualquier otra que tenga enrutamiento hasta ella.
+
+# Probamos que se puede acceder a la app desde la VM
+curl 192.168.0.6
+
+# Eliminamos los despliegues. Al eliminar el servicio, también se elimina el balanceador
+# interno de Azure que se creó.
+kubectl delete -f front-end-service-internal.yaml
+kubectl delete -f guestbook-without-service.yaml
+
+# Comprobamos
+kubectl get all
+
+############################################
+# Asegurar la aplicación por medio de NSGs #
+############################################
+
+# Volvemos a desplegar la aplicación como en el apartado anterior, aun sin NSGs.
+# ¡¡¡¡¡¡¡¡¡IMPORTANTE!!!!!!!!!!
+# En este caso el archivo 'front-end-service.yaml' crea un balanceador externo
+# (público) de Azure.
+kubectl apply -f guestbook-without-service.yaml
+kubectl apply -f front-end-service.yaml
+
+# Esperamos a que el servicio adquiera una IP Externa pública. Anotamos la IP.
+kubectl get service -w
+
+# Compobar con el navegador que la app funciona: http://<IP Externa>
+
+# Ahora vamos a configurar los NSGs para permitir que solo desde nuestra IP
+# se pueda acceder a la aplicación.
+# ¡¡¡¡¡¡¡¡¡IMPORTANTE!!!!!!!
+# Hacerlo desde otra consola y no desde dentro de la VM 'vm-myaks'
+# Obtenemos nuestra IP pública.
+PUBLIC_IP=$(curl icanhazip.com)
+
+# La comprobamos.
+echo $PUBLIC_IP
+
+# Copiarla al portapapeles y volver a la consola de la VM 'vm-myaks'.
+
+# Para asegurar el servicio 'front-end', editamos el archivo 'front-end-service-secured.yaml'.
+nano front-end-service-secured.yaml
+
+# En la última línea, en 'loadBalancerSourceRanges' poner la IP Externa pública que
+# copiamos anteriormente. Hay que poner estas IPs en notación CIDR, por lo tanto
+# debe terminar en /32.
+
+# Guardamos (CTR+X, Y, Enter)
+
+# Aplicamos la actualización al servicio.
+kubectl apply -f front-end-service-secured.yaml
+
+# Comprobamos la IP Externa del servicio y copiamos dicha IP.
+kubectl get service
+
+# Comprobamos. Desde la VM NO CONECTARÁ. Después de 2 minutos dará error de timeout.
+curl <IP Externa del servicio>
+
+# Probamos desde el navegador, a 'http://<IP Externa del servicio>' debe conectar.
+
+# Los NSGs que se crean se pueden ver desde la GUI de Azure, en:
+# Home / Network Security Groups / <aks-agentpool-XXXXXXX-nsg>
+# Existe una regla que permite el tráfico desde nuestra IP hacia el puerto 80
+# de la IP Externa del balanceador del servicio.
+
+# Limpiamos los recursos.
+kubectl delete -f guestbook-without-service.yaml
+kubectl delete -f front-end-service-secured.yaml
+
+# Salimos de la VM y eliminamos el resto.
+az group delete \
+    --resource-group  myaksvm-rg \
+    --yes
+
+az aks delete \
+    --resource-group myaks-rg \
+    --name myaks \
+    --yes
+
+# Eliminamos el grupo de recurso que contiene el cluster.
+az group delete \
+    --resource-group myaks-rg \
+    --yes
+
+########################################################
+# Asegurar las cargas usando políticas de red de Azure #
+########################################################
+
+# Para proteger el tráfico entre pods, K8s tiene una funcionalidad llamada
+# 'Network Policies'. Pueden ser usadas para proteger el tráfico que viene
+# desde el exterior hasta los pods, y desde los pods hacia el exterior, 
+# también el tráfico entre pods.
+
+# Como ya se ha visto una forma de proteger el tráfico desde el exterior
+# hacia los pods, veremos cómo usar las políticas de red para proteger
+# el tráfico de pod a pod.
+
+# Si el cluster tiene habilitadas las políticas de red, podemos crear objetos
+# de este tipo. Si no hay políticas de red establecidas en un pod, todo
+# el tráfico hacia y desde el pod se permite. Cuando se pone una política, 
+# todo el tráfico de entrada al pod está bloqueado, y se permite el tráfico
+# de salida, excepto lo que permita dicha política.
+
+# Comenzamos creando un cluster con las políticas de red habilitadas.
+az aks create \
+    --resource-group myaks-rg \
+    --name myaks \
+    --enable-managed-identity \
+    --node-count 2 \
+    --node-vm-size Standard_DS2_v2 \
+    --generate-ssh-keys \
+    --network-plugin azure \
+    --network-policy azure
+
+# Refrescamos las credenciales para acceder al cluster.
+az aks get-credentials \
+    --resource-group myaks-rg \
+    --name myaks \
+    --overwrite-existing
+
+# Comprobamos
+kubectl get nodes
+
+# En este ejemplo comprobaremos las conexiones entre dos servidores web  
+# El código está en 'web-server-a.yaml' y 'web-server-b.yaml'
+cd ~/Hands-On-Kubernetes-on-Azure/Chapter11
+code web-server-a.yaml 
+code web-server-b.yaml 
+
+# Cada pod tiene una etiqueta 'app: webserver', y otra llamada 'env' (con
+# el valor 'A' para el primero y 'B' para el segundo)
+
+# Creamos los pods.
+kubectl create -f web-server-a.yaml
+kubectl create -f web-server-b.yaml
+
+# Comprobamos
+kubectl get pods
+
+# Para este ejemplo, usaremos las direcciones IPs de los pods para probar
+# la conexión. Copiamos el valor de la IP del pod 'web-server-b'
+kubectl get pods -o wide
+WEB_SERVER_B_IP=<pegar aquí la ip>
+
+# Ahora intentamos conectar desde 'web-server-a' al 'web-server-b'
+kubectl exec -it web-server-a -- \
+    wget -qO- -T 2 http://$WEB_SERVER_B_IP
+
+# Creamos un objeto 'NetworkPolicy' que limitará el tráfico hacia y desde
+# los pods con la etiqueta 'app: web-server'. La política está definida en
+# el archivo 'deny-all.yaml'
+# Más info: https://kubernetes.io/docs/concepts/services-networking/network-policies/
+code deny-all.yaml 
+
+# Línea 1:      Aquí se define que estamos creando un objeto 'NetworkPolicy'
+#
+# Líneas 6-8:   Indicamos que la política se aplicará a los pods que tengan la
+#               etiqueta 'app: webserver'
+#
+# Líneas 9-10:  Aquí se definen las reglas de permitir. Como se puede ver, no
+#               hay ninguna regla, lo que significa que todo el tráfico de
+#               entrada se bloquea (el de salida se permite)
+#               https://kubernetes.io/docs/concepts/services-networking/network-policies/
+
+# Creamos el objeto 'NetworkPolicy'
+kubectl create -f deny-all.yaml
+
+# Para ver las políticas de red.
+kubectl get networkpolicies
+
+# Para ver el contenido de la política de red.
+kubectl describe networkpolicy deny-all
+
+# Volvemos a probar la conexión. No funcionará.
+kubectl exec -it web-server-a -- \
+    wget -qO- -T 2 http://$WEB_SERVER_B_IP
+
+# Ahora creamos otra política de red que permitirá el trafico de forma selectiva
+# desde 'web-server-a' a 'web-server-b'. El archivo es 'allow-a-to-b'.yaml 
+code allow-a-to-b.yaml 
+
+# Líneas 9-13:      Definimos el tráfico de ingress que permitimos, concretamente desde
+#                   los pods que tienen la etiqueta 'env: A'.
+#
+# Líneas 14-18:     Definimos el tráfico de salida que se permite. En este caso
+#                   hacia los pods que tienen la etiquete 'env: B'.
+
+# Cuando despleguemos esta nueva política, tendremos dos que se aplican a los pods.
+# la política 'deny-all' y esta nueva, 'allow-a-to-b'. En Kubernetes las políticas
+# de red son ADITIVAS, es decir, si una bloquea y otra permite, el resultado final
+# es que se permite el tráfico.
+
+# Creamos la segunda política de red.
+kubectl create -f allow-a-to-b.yaml
+
+# Comprobamos
+kubectl get networkpolicies
+
+# Miramos la nueva política.
+kubectl describe networkpolicy allow-a-to-b 
+
+# Volvemos a probar la conexión. Funcionará.
+kubectl exec -it web-server-a -- \
+    wget -qO- -T 2 http://$WEB_SERVER_B_IP
+
+# Hemos permitido el tráfico A --> B, no el inverso. Se puede comprobar
+# Copiamos el valor de la IP del pod 'web-server-a'
+kubectl get pods -o wide
+WEB_SERVER_A_IP=<pegar aquí la ip>
+
+# Comprobamos la conexión B --> A. No funcionará.
+kubectl exec -it web-server-b -- \
+    wget -qO- -T 2 http://$WEB_SERVER_A_IP
+
+# Limpiamos recursos.
+kubectl delete -f web-server-a.yaml
+kubectl delete -f web-server-b.yaml
+
+# Borramos políticas de red.
+kubectl delete networkpolicy allow-a-to-b
+kubectl delete networkpolicy deny-all
+
+# borramos el cluster.
+az aks delete \
+    --name myaks \
+    --resource-group myaks-rg \
+    --yes
+
+########################################################
+# Integración con los servicios administrados de Azure #
+########################################################
+
+# Hasta el momento las aplicaciones han sido autocontenidas, lo
+# que significa que han sido capaces de correr por completo dentro
+# de AKS. Una gran ventaja de esto es la portabilidad, que nos
+# permite mover la aplicación a otro cluster de K8s con relativa
+# facilidad.
+
+# Por el contrario, tenemos ciertas ventajas en la delegación de
+# partes de la app en el PaaS de Azure, por ejemplo usar un servicio
+# administrado de base de datos. Ya no necesitaremos preocuparnos de
+# la actualización y mantenimiento del servidor de bases de datos. Los
+# backups de hacen de forma automática, etc.
+
+########################################################
+# Conectar una aplicación a una base de datos de Azure #
+########################################################
+
+# Discutiremos los beneficios de usar una base de datos hospedada en lugar
+# de los StatefulSets de Kubernetes. Para crear esta base de datos administrada
+# haremos uso de 'Azure Service Operator (ASO)', que es una forma de crear
+# recursos de Azure, como una base de datos administrada de MySQL desde el propio
+# cluster de Kubernetes.
+
+###########################################
+# Instalación de 'Azure Service Operator' #
+###########################################
+
+# Microsoft se ha dado cuenta que a muchos usuarios les gustaría usar sus servicios
+# administrados desde Kubernetes y necesitan una forma más sencilla de hacerlo
+# parecida a como el propio K8s hace sus despliegues. El projecto ASO se creó para esto.
+
+# ASO es un nuevo proyecto iniciado en 2020 que reemplaza al proyecto 'Open Service Broker
+# for Azure (OSBA), que era la implementación original de Microsoft que nos permitía
+# crear objetos de Azure directamente desde K8s.
+
+# ASO se compone de dos partes:
+#
+#   1) Un conjunto de 'CustomResourceDefinitions' o CRDs.
+#   2) Un controlador que maneja esos CRDs.
+#
+# Los CRDs son un conjunto de extensiones de API para Kubernetes que nos permiten especificar
+# los objetos de Azure que queremos crear. Hay CRDs para grupos de recursos, VMs, bases de
+# datos MySQL, ...
+#
+# El controlador es un pod que corre en el cluster y monitoriza la API de Kubernetes para los
+# objetos que han sido creados utilizando estos CRDs. Es este controlador quien interactúa con
+# la API de Azure para crear los recursos que damos de alta con ASO.
+
+# ASO depende de otros dos proyectos que ya hemos utilizado: Las identidades de pod administradas
+# y el administrador de certificados.
+
+# ASO utiliza las identidades de pod administradas de Azure AD para asociar una identidad
+# administrada al pod ASO. Esto también implica que esta identidad administrada necesita tener
+# permisos para crear los recursos en Azure.
+
+# ASO usa 'cert-manager' para tener acceso al certificado que usa el pod ASO.
+
+# Por defecto ASO almacenará los secretos, como cadenas de conexión, en secretos de Kubernetes.
+# Como vimos es mejor almacenarlos en el Key Vault. ASO tiene la opción de hacer esto durante
+# su configuración.
+
+
+#                                                                  Secreto de
+#                                                                  Kubernetes
+#                                                                       |
+#              Archivo YAML para                                        |
+#             el recurso de Azure                                       |
+#                                                                       |
+#  USUARIO ----------(1)--------->    CRD   <------(2)---- ASO -->(4)----
+#                                                           |           |
+#                                                          (3)          |
+#                                                           |           |
+#                                                       Azure API       |
+#                                                                   Key Vault 
+#
+# El flujo es el siguiente:
+#
+#   1) Como usuario enviamos un archivo YAML con la definición de un recurso de Azure a la
+#      API de Kubernetes. El recurso de Azure se define en un CRD.
+#
+#   2) El por ASO monitoriza la API de K8s buscando cambios para los objetos CRDs de Azure.
+#
+#   3) Si detecta cambios, ASO creará los recursos en Azure.
+#
+#   4) Si se crea una cadena de conexión como parte de la creación del recurso, se almacenará
+#      como un secreto de K8s (por defecto) o en una Key Vault (si lo configuramos así)
+
+####################################
+# Instalación de ASO en el cluster #
+####################################
+
+# Creamos un grupo de recursos para el cluster (si no estuviera creado ya)
+az group create \
+    --name myaks-rg \
+    --location westeurope
+
+# Necesitamos habilitar la identidad de pods el Azure.
+az feature register \
+    --name EnablePodIdentityPreview \
+    --namespace Microsoft.ContainerService
+
+# También necesitamos una extensión de Azure CLI
+az extension add \
+    --name aks-preview
+
+# Debemos esperar hasta que la característica de identidad de pods esté habilitada.
+az feature show \
+    --name EnablePodIdentityPreview \
+    --namespace Microsoft.ContainerService \
+    -o table
+
+# Ahora refrescamos el registro de la característica en el espacio de nombres del 
+# servicio de contenedores.
+az provider register \
+    --namespace Microsoft.ContainerService
+
+# Creamos el cluster con capacidad de usar identidades administradas de pod.
+az aks create \
+    --resource-group myaks-rg \
+    --name myaks \
+    --enable-managed-identity \
+    --enable-pod-identity \
+    --network-plugin azure \
+    --node-vm-size Standard_DS2_v2 \
+    --node-count 2 \
+    --generate-ssh-keys
+
+# Refrescamos las credenciales para que 'kubectl' pueda acceder al Control Plane.
+az aks get-credentials \
+    --resource-group myaks-rg \
+    --name myaks \
+    --overwrite-existing
+
+#####################################
+# Creamos la identidad administrada #
+#####################################
+
+# Para empezar, vamos a crear una nueva identidad administrada asignada por el usuario en Azure.
+az identity create \
+    --resource-group myaks-rg \
+    --name aso-mi \
+    --location westeurope 
+
+# En la GUI se puede ver la identidad administrada en Home / Managed Identities / access-blob-id
+
+# Una vez creada, necesitamos copiar el 'id' (identificador del recurso), que serán usados en breve.
+MANAGED_IDENTITY_RESOURCE_ID=$(az identity show \
+                                --resource-group myaks-rg \
+                                --name aso-mi \
+                                --query id \
+                                -o tsv)
+
+# Comprobamos
+echo $MANAGED_IDENTITY_RESOURCE_ID
+
+# Tomamos el ID de recurso (de los nodos workers) de 'myaks-agentpool'
+AGENT_POOL_CLIENT_ID=$(az aks show \
+                        --resource-group myaks-rg \
+                        --name myaks \
+                        --query identityProfile.kubeletidentity.clientId \
+                        -o tsv)
+
+# Es algo así: '8ed62b91-070a-4d0c-a25a-2bbc2c28df11'
+#Lo consultamos.
+echo $AGENT_POOL_CLIENT_ID
+
+# Creamos una asignación de rol de Azure para dar permiso al cluster (agentpool) sobre la identidad 
+# admininistrada. El rol a asignar es 'Managed Identity Operator'. El ámbito es la identidad
+# administrada y el 'assignee' es el CLIENT_ID del agentpool.
+az role assignment create \
+    --assignee $AGENT_POOL_CLIENT_ID \
+    --role "Managed Identity Operator" \
+    --scope $MANAGED_IDENTITY_RESOURCE_ID
+
+# Se puede comprobar en la GUI de Azure en: 
+# Home / Managed Identities / aso-mi / Role Assignments / Managed Identity Operator
+
+# Ahora vamos a dar permisos a la identidad administrada para crear recursos en la 
+# subscripción de Azure. 
+
+# Tomamos el 'clientId' de la identidad administrada.
+MANAGED_IDENTITY_CLIENT_ID=$(az identity show \
+                                --resource-group myaks-rg \
+                                --name aso-mi \
+                                --query clientId \
+                                -o tsv)
+
+# Comprobamos
+echo $MANAGED_IDENTITY_CLIENT_ID
+
+# Buscamos el 'resourceId' de la subscripción.
+SUBSCRIPTION_RESOURCE_ID=$(az account show \
+                            --query id \
+                            -o tsv)
+
+# Concatenamos '/subscriptions/' al ID de la subscripción.
+SUBSCRIPTION_RESOURCE_ID='/subscriptions'/$SUBSCRIPTION_RESOURCE_ID
+
+# Comprobamos
+echo $SUBSCRIPTION_RESOURCE_ID
+
+# Creamos una asignación de rol. El rol a asignar el 'Contributor'. 
+# El ámbito es la subscripción y  el 'assignee' es le identidad administrada 
+# que hemos creado antes ('aso-mi')
+az role assignment create \
+    --assignee $MANAGED_IDENTITY_CLIENT_ID \
+    --role "Contributor" \
+    --scope $SUBSCRIPTION_RESOURCE_ID
+
+# Se puede comprobar en la GUI de Azure en:
+# Home / Subscriptions / <Nombre Subscripción> / Access Control (IAM) / Contributor
+
+# También puede verse en:
+# Home / Managed Identities / aso-mi / Access Control (IAM) / Contributor
+
+##########################
+# Creación del Key Vault #
+##########################
+
+# Vamos a crear un Key Vault para que ASO almacene secretos y cadenas de conexión.
+
+# El nombre del Key Vault debe ser único globalmente.
+KEY_VAULT_NAME=myKeyVaultASG20220129
+az keyvault create \
+    --resource-group myaks-rg \
+    --name $KEY_VAULT_NAME \
+    --location westeurope
+
+# Tomamos el 'principalId' de la identidad administrada ('aso-mi') a la que vamos a dar 
+# acceso al Key Vault.
+PRINCIPAL_ID=$(az identity show \
+                --resource-group myaks-rg \
+                --name aso-mi \
+                --query principalId \
+                -o tsv)
+
+# Comprobamos
+echo $PRINCIPAL_ID
+
+# Asignamos la política de acceso al vault para la identidad administrada. 
+# Damos todos los permisos relacionados con los secretos.
+az keyvault set-policy \
+    --name $KEY_VAULT_NAME \
+    --object-id $PRINCIPAL_ID \
+    --secret-permissions get list set delete recover backup restore
+
+# Podemos comprobarlo en la GUI en:
+# Home / <Nombre del Key Vault> / Access Policies / Application / aso-mi
+
+################################
+# Configurar ASO en el cluster #
+################################
+
+# Necesitamos asociar la identidad administrada 'aso-mi' al cluster. Los
+# componentes de ASO serán creados en su propio espacio de nombres. 
+# Creamos el namespace.
+kubectl create namespace azureoperator-system
+
+# Tomamos el 'id (identificador de recursos) de la identidad administrada.
+MANAGED_IDENTITY_RESOURCE_ID=$(az identity show \
+                                --resource-group myaks-rg \
+                                --name aso-mi \
+                                --query id \
+                                -o tsv)
+
+# Comprobamos
+echo $MANAGED_IDENTITY_RESOURCE_ID
+
+# Asociamos identidad al cluster.
+az aks pod-identity add \
+    --resource-group myaks-rg \
+    --cluster-name myaks \
+    --namespace azureoperator-system \
+    --name aso-identity-binding \
+    --identity-resource-id $MANAGED_IDENTITY_RESOURCE_ID
+
+# Instalamos 'cert-manager' en el cluster. Esto ya se hizo anteriormente en Una
+# práctica.
+kubectl apply -f https://github.com/jetstack/cert-manager/releases/download/v1.1.0/cert-manager.yaml
+
+# Comprobamos el despliegue.
+kubectl rollout status \
+    --name cert-manager deploy cert-manager-webhook
+
+# Una vez desplegado 'cert-manager' procedemos a instalar ASO a través de Helm.
+# Añadimos el repositorio de ASO de Helm.
+helm repo add azureserviceoperator \
+    https://raw.githubusercontent.com/Azure/azure-service-operator/master/charts
+
+# Ahora configuramos ASO. Para ello necesitamos tomar ciertos valores que debemos
+# incluir en el archivo yaml de configuración.
+
+# 'Tenant ID'
+AZURE_TENANT_ID=$(az account show \
+                    --query tenantId \
+                    -o tsv)
+
+# 'subscription ID'
+AZURE_SUBSCRIPTION_ID=$(az account show \
+                            --query id \
+                            -o tsv)
+
+# Mostramos valores
+echo 'azureTenantID         :'$AZURE_TENANT_ID
+echo 'azureSubscriptionID   :'$AZURE_SUBSCRIPTION_ID
+echo 'azureOperatorKeyvault :'$KEY_VAULT_NAME
+echo 'resourceID            :'$MANAGED_IDENTITY_RESOURCE_ID
+echo 'azureClientID         :'$MANAGED_IDENTITY_CLIENT_ID
+
+# Editamos el archivo 'values.yaml' y ponemos los valores que acabamos de extraer.
+cd ~/Hands-On-Kubernetes-on-Azure/Chapter12
+code values.yaml
+
+# ¡¡¡¡¡¡¡¡IMPORTANTE!!!!!!!!!
+# El chart de helm da error si el valor 'installAadPodIdentity: true'
+# cambiar a 'installAadPodIdentity: false'
+
+# Guardamos y cerramos 'values.yaml'
+
+# Vamos a instalar ASO con la configuración anterior.
+helm upgrade \
+    --install aso azureserviceoperator/azure-service-operator \
+    --namespace azureoperator-system \
+    --create-namespace \
+    -f values.yaml
+
+# Esperar hasta que el despliegue haya terminado.
+kubectl rollout status deploy \
+    --namespace azureoperator-system azureoperator-controller-manager
+
+# Hay que hacer una corrección a la etiqueta 'aadpodidbinding' en el deployment
+# 'azureoperator-controller-manager'. Esta corrección está en el archivo 'patch.yaml'
+kubectl patch deployment \
+    azureoperator-controller-manager \
+    --namespace azureoperator-system \
+    --patch "$(cat patch.yaml)"
+
+##################################################################
+# Despliegue de una base de datos de Azure para MySQL usando ASO #
+##################################################################
+
+# En primer lugar creamos un grupo de recursos usando ASO.
+# editamos el archivo 'rg.yaml' y ponemos la ubicación a 'westeurope'
+code rg.yaml
+
+# Guardamos.
+
+# Creamos el grupo de recurso desde ASO.
+kubectl create -f rg.yaml
+
+# Podemos monitorizar la creación del grupo de recursos con este comando.
+kubectl get resourcegroup -w
+
+# Ahora vamos a crear el servidor administrado de MySQL. Editamos el archivo
+# 'mysql-server.yaml' y ponemos '<mysql-server-name>' y '<cluster location>
+# editamos el archivo.
+code mysql-server.yaml
+
+# Línea 2:      Indicamos que queremos una instancia de MySQLServer
+#
+# Línea 4:      Aquí ponemos el nombre del servidor. Tiene que ser globalmente único.
+#               y usar letras minúsculas. Por ejemplo: mysqlserverasg20220128
+#
+# Línea 6:      Poner como ubicación la misma región que el cluster AKS (westeurope)
+#
+# Línea 9:      'sslEnforcement' debería ser 'enabled'. Por simplificar el ejemplo, ponemos
+#               'disabled'.
+#
+# Línea 11-16:  Tamaño del servidor. 5GB.
+
+# Guardamos el archivo.
+
+# Creamos el servidor administrado de MySQL por medio de ASO.
+kubectl create -f mysql-server.yaml
+
+# Comprobamos el progreso del despliegue. Esperar a que ponga 'successfully provisioned'
+kubectl get mysqlserver -w 
+
+# Ahora creamos la base de datos. El archivo de definición es 'mysql-database.yaml'.
+code mysql-database.yaml
+
+# Línea 7:  Poner el nombre del servidor administrado MySQL, por ejemplo: mysqlserverasg20220128
+
+# Guardar el archivo.
+
+# Creamos la base de datos desde ASO.
+kubectl create -f mysql-database.yaml
+
+# Comprobamos progreso.
+kubectl get mysqldatabase -w 
+
+# Ahora necesitamos crear una regla de firewall que permita el tráfico hacia la base de datos.
+# El archivo con la definición es 'mysql-firewall.yaml'
+code mysql-firewall.yaml
+
+# Línea 7: Poner el nombre del servidor administrado de MySQL, por ejemplo: mysqlserverasg20220128
+
+# Guardar el archivo.
+
+# Se abre el tráfico para todas las IPs.
+
+# Creamos la regla.
+kubectl create -f mysql-firewall.yaml
+
+# Comprobamos el progreso.
+kubectl get mysqlfirewallrule -w 
+
+# Desde la GUI de Azure podemos ver cómo se ha creado la base de datos:
+# Home / Azure Database for MySQL Servers / mysqlserverasg20220128 / Overview / Available resources / wordpress-db
+
+# La regla de firewall se puede ver en:
+# Home / Azure Database for MySQL Servers / mysqlserverasg20220128 / Settings / Connection security / Firewall rules / allow-all-mysql
+
+#####################################################
+# Crea una aplicación usando la base de datos MySQL #
+#####################################################
+
+# Para comenzar necesitamos la información de conexión con el servidor de base de datos.
+# Cuando instalamos ASO, lo configuramos para usar la Key Vault como almacén de secretos
+# en lugar de los secretos de Kubernetes.
+
+# El nombre del secreto tiene esta convención: <espacio de nombres>-<nombre de objeto>,
+# donde '<nombre de objeto>' es el servidor administrado MuSQL.
+# En este caso será: 'default-default-mysqlserverasg20220128'
+
+# Tomamos el valor del secreto.
+SECRET_VALUE=$(az keyvault secret show \
+                --name default-mysqlserverasg20220128 \
+                --vault-name $KEY_VAULT_NAME \
+                --query value \
+                -o tsv)
+
+# Comprobamos.
+echo $SECRET_VALUE
+
+# En la GUI el valor del secreto está en:
+# Home / Key vaults / <$KEY_VAULT_NAME> / 'default-mysqlserverasg20220128' / Current Version / Secret value
+
+# El valor del secreto contiene la información de conexión:
+#
+#   1) FQDN del servidor.
+#   2) Nombre de usuario (codificado en base64)
+#   3) Password (codificado en base64)
+
+# El script 'decode-secret.sh' nos facilita ver estos valores. 
+# Este script requiere el uso el programa 'jq', que es una herramienta de consola
+# que permite parsear ficheros JSON.
+sudo apt install jq -y
+
+# Visualizamos el secreto.
+sh decode-secret.sh $SECRET_VALUE
+
+# Guardamos estos valores en variables para ser usados en breve.
+FQDN=$(echo $SECRET_VALUE | jq -r .fullyQualifiedServerName | base64 -d)
+USER=$(echo $SECRET_VALUE | jq -r .fullyQualifiedUsername | base64 -d)
+PASSWD=$(echo $SECRET_VALUE | jq -r .password | base64 -d)
+
+# Comprobamos
+echo $FQDN
+echo $USER
+echo $PASSWD
+
+# Usamos Helm para desplegar un 'WordPress' que use la base de datos MySQL creada.
+
+# Añadimos 'bitnami' al repositorio de Helm.
+helm repo add bitnami https://charts.bitnami.com/bitnami
+
+# Instalamos WordPress.
+helm install wp bitnami/wordpress \
+    --set mariadb.enabled=false \
+    --set externalDatabase.host=$FQDN \
+    --set externalDatabase.user=$USER \
+    --set externalDatabase.password=$PASSWD \
+    --set externalDatabase.database='wordpress-db' \
+    --set externalDatabase.port='3306'
+
+# Monitorizamos la creación de pods de WordPress. Tarda un par de minutos en 
+# terminar la configuración inicial.
+kubectl get pods -w
+
+# Miramos los servicios.
+kubectl get service
+
+# Probar a conectar con el navegador a 'http://<IP EXTERNA>'. Escribir un post para 
+# verificar que la DB funciona.
+
+# Limpieza de recursos.
+helm uninstall wp
+
+kubectl delete -f mysql-firewall.yaml
+kubectl delete -f mysql-database.yaml
+kubectl delete -f mysql-server.yaml
+kubectl delete -f rg.yaml
+
+helm uninstall aso \
+    --namespace azureoperator-system
+
+az aks pod-identity delete \
+    --resource-group myaks-rg \
+    --cluster-name myaks \
+    --namespace azureoperator-system \
+    --name aso-identity-binding
+
+kubectl delete namespace azureoperator-system
+kubectl delete -f https://github.com/jetstack/cert-manager/releases/download/v1.1.0/cert-manager.yaml
+
+# El siguiente comando no es necesario, porque el grupo de recursos se creó desde ASO.
+# Al desinstalar ASO del cluster, se eliminan los objetos que creó.
+az group delete \
+    --name aso-resources \
+    --yes
+
+
+########################################
+# Azure Security Center for Kubernetes #
+########################################
+
+# Requiere habilitar costes en la subscripción.
+
+########################
+# Serverless functions #
+########################
+
+# Servicios cloud como 'Azure Functions', AWS Lambda o Cloud Run de GCP
+# han hecho muy fácil para los usuarios ejecutar código como funciones serverless.
+
+# La palabra 'serverless' se refiere a cualquier solución donde no necesitas administrar
+# servidores. Las funciones serverless se refieren a un subconjunto de la computación
+# en la que ejecutar nuestro código como una función bajo demanda.
+
+# Esto significa que el código de la función solo será ejecutado cuando se necesite.
+
+# Este estilo se llama arquitectura conducida por evento (event-driven). Los consumidores
+# de eventos se disparan cuando hay un evento. Estos cosumidores serán las funciones serverless.
+
+# Un evento puede ser desde un mensaje en una cola, un objeto subido al almancenamiento, e
+# incluso una llamada HTTP.
+
+# Las funciones serverless se usan a menudo para procesamiento del backend. Un ejemplo típico es
+# crear una imagen en miniatura (thumbnail) de una foto que se ha subido al almacenamiento.
+
+#                                       ----<--------- Almacena thumbnail -------<----------
+#                                       |                                                  |
+#                                       |                                                  |
+#   /Usuario/--> Sube imagen -->  /Almacenamiento/  -----> Dispara ejec. función --> /Serverless Function/
+#
+# Las funciones se escalarán automticamente para ajustar el incremento o decremento de la demanda.
+# Una función puede escalarse de forma independiente al resto de funciones.
+
+# Otra ventaja de las funciones serverless:
+#
+#   1) No tenemos que tratar con la infraestructura
+#   2) Se paga por ejecución.
+
+# En este capítulo aprenderemos a utilizar funciones serverless sobre AKS, usando la versión 
+# open source de 'Azure Functions'. Empezaremos creando una función que se dispara con un
+# mensaje HTTP. Posteriormente, instalaremos la característica del autoescalado de funciones
+# en el cluster. También integraremos la colas de almacenamiento de Azure.
+
+#######################################
+# Diferentes plataformas de funciones #
+#######################################
+
+# Tenemos disponibles diferentes frameworks de funciones que pueden correr sobre Kubernetes:
+#
+#   1)  Knative: Es una plataforma serverless escrita en 'Go' y desarrollada por Google. Se pueden
+#       correr funciones Knatives en la nubel de Google o en nuestro cluster de Kubernetes.
+#   
+#   2)  OpenFaas: Es un framework serverless que es nativo en Kubernetes. Se pueden ejecutar en
+#       un cluster administrado como AKS o en un cluster on-prem. Escrito en 'Go'.
+#
+#   3)  Serverless: Es un framework serverless basado en 'Node.js' que puede desplegar y administrar
+#       funcionesen diferentes proveedores cloud (Azure incluído). El soporte se proporciona por
+#       medio de 'Kubeless'
+#
+#   4)  Fission.io: Framework serverless respaldado por la compañía 'Platform9'. Escrito en 'Go'.
+#       Nativo en kubernetes. Puede correr en cualquier cluster de Kubernetes.
+#
+#   5)  Apache OpenWhisk: Plataforma de funciones serverless open-source mantenida por la organización
+#       Apache. Puede correr en Kubernetes, Mesos, o Docker Compose.
+
+# Microsoft ha tomado una estrategia interesante con sus plataforma de funciones. Opera las 
+# 'Azure Functions' como un servicio administrado en Azure y tiene una solución completa open-source
+# que se puede ejecutar en cualquier sistema. Esto hace que el modelo de programación de Azure Functions
+# pueda ponerse por encima de Kubernetes.
+
+# Microsoft también ha liberado otro proyecto de open-source (asociado con Red Hat) llamado 'Kubernetes
+# Event-Driven Autoscaling (KEDA)' que hace más sencillo el escalado de funciones encima de un cluster
+# de Kubernetes.
+
+# KEDA es un autoescalador que puede permitir deployments en Kubernetes que se escalen a un mínimo de
+# cero (0) pods, cosa que no es posible usando el 'Horizontal Pod Autoscaler' (HPA) que viene por
+# defecto.
+
+#################################
+# Configurar los prerrequisitos #
+#################################
+
+# Necesitamos configurar un 'Azure Container Registry' (ACR) y una VM que será usada para desarrollar
+# las funciones. Necesitamos una VM porque la Cloud Shell no puede compilar imágenes de contenedor.
+
+# El ACR serña usado para almacenar imagenes de contenedor personalizadas que contendrán las funciones
+# que desarrollemos.
+
+#####################################
+# Crear un Azure Container Registry #
+#####################################
+
+# Creamos un grupo de recursos para almacenar todo lo relacionado con las funciones.
+az group create \
+    --name functions-rg \
+    --location westeurope
+
+# Creamos un ACR. El nombre debe ser único globalmente
+ACR_NAME=myacrasg20220201
+az acr create \
+    --resource-group functions-rg \
+    --name $ACR_NAME \
+    --sku Basic
+
+# Configuramos el cluster AKS para que tenga acceso al registro ACR.
+az aks update \
+    --name myaks \
+    --resource-group myaks-rg \
+    --attach-acr $ACR_NAME
+
+
+###############################################
+# Crear una VM para desarrollar las funciones #
+###############################################
+
+# Crearemos una VM con las siguientes herramientas:
+#
+#   1) Docker runtime.
+#   2) Azure CLI.
+#   3) Herramientas de Azure Functions.
+#   4) Kubectl.
+
+# ¡¡¡¡¡¡¡¡IMPORTANTE!!!!!!!!!!!!!!
+# Si la subscripción está limitada, bajamos el cluster a 1 nodo para que funcione.
+az aks scale \
+    --name myaks \
+    --resource-group myaks-rg \
+    --node-count 1
+
+# Para la autenticación con la VM necesitamos las claves SSH.
+# Verificamos que tenemos las claves.
+ls ~/.ssh
+
+# Si no estuvieran, las generamos con el comando 'ssh-keygen'
+
+# Creamos la VM.
+az vm create \
+    --resource-group functions-rg \
+    --name devMachine \
+    --image UbuntuLTS \
+    --ssh-key-value ~/.ssh/id_rsa.pub \
+    --admin-username antonio \
+    --size Standard_D1_v2
+
+# El JSON que aparece al finalizar la creación de la VM contiene la IP pública. 
+# La almacenamos.
+PIP=<Poner aquí la IP pública>
+
+# Conectamos por SSH con la VM.
+ssh antonio@$PIP
+
+¡¡¡¡¡¡¡¡IMPORTANTE!!!!!!!!!!!!!
+# Hasta nuevo aviso, todos los comandos hay que ponerlos dentro de la VM.
+
+
+# Instalamos Docker.
+sudo apt-get update
+sudo apt-get install docker.io -y
+sudo systemctl enable docker
+sudo systemctl start docker
+
+# Añadimos el usuario al grupo 'docker'. Esto permitirá ejecutar 'docker' sin 'sudo'.
+sudo usermod -aG docker antonio
+newgrp docker
+
+# Probamos que Docker funciona.
+docker run hello-world
+
+# Instalamos Azure CLI.
+curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash
+
+# Iniciamos sesión en Azure.
+az login
+
+# Autenticamos la VM con el ACR que hemos creado.
+# Copiar en el portapapeles el nombre del ACR
+ACR_NAME=<Poner aquí el nombre del ACR>
+az acr login \
+    --name $ACR_NAME
+
+# Instalamos 'kubectl' en la VM.
+sudo az aks install-cli
+
+# Descargamos las credenciales para que 'kubectl' pueda contactar con el cluster.
+az aks get-credentials \
+    --name myaks\
+    --resource-group myaks-rg
+
+# Probamos.
+kubectl get nodes
+
+# Ahora instalamos las herramientas de Azure Functions en la VM.
+# Comprobar que coindice la versión
+lsb_release -a 
+
+wget -q https://packages.microsoft.com/config/ubuntu/18.04/packages-microsoft-prod.deb
+sudo dpkg -i packages-microsoft-prod.deb
+sudo apt-get update
+sudo apt-get install azure-functions-core-tools-3 -y
+
+#################################
+# Crear una Azure Function HTTP #
+#################################
+
+# Creamos un directorio de trabajo.
+mkdir -p ~/http
+cd ~/http
+
+# Inicializamos la función por medo del siguiente comando. El parámetro '--docker' que
+# se va a usar indica que la función se compilará como un contenedor de Docker.
+func init --docker
+
+# Elegimos '4' (Python). Se crearán los archivos necesarios para que la Azure Function
+# funcione.
+
+# Ahora creamos la función en sí.
+func new
+
+# Elegimos '9' (HTTP Trigger)
+
+# Llamamos a la función 'python-http'
+
+# El código de la función se almacena en el directorio 'python-http'. Si queremos curiosearlo:
+nano python-http/__init__.py
+
+# La función devuelve el nombre que se le pasa en la query string.
+
+# Necesitamos hacer un cambio en el archivo de configuración de la función, porque por defecto,
+# las funciones requieren una request autenticada. Lo cambiaremos a 'anonynous' para este
+# ejemplo.
+nano python-http/function.json
+
+# En la línea 5, cambiamos el 'authlevel' de 'function' a 'anonymous'
+# Guardamos (CTRL+X, Y, Enter)
+
+# Vamos a desplegar la función en AKS. Poner el nombre del ACR. Tarda al menos 5 minutos.
+func kubernetes deploy \
+    --name python-http \
+    --registry <registry name>.azurecr.io
+
+# Cuando termine el proceso, nos interesa copiar el valor de 'Invoke url', porque es el
+# endpoint para acceder a la función.
+
+# Veamos qué es lo que ha ocurrido.
+
+# K8s ha realizado un deployment para la función (python-http-http)
+kubectl get deployment
+
+# También ha creado un servicio de tipo 'LoadBalancer'
+kubectl get service
+
+# Para probar la función, usamos un navegador que conecta al endpoint:
+# http://<IP Externa>/api/python-http?name=antonio
+
+# Limpiamos un poco.
+kubectl delete deployment python-http-http
+kubectl delete service python-http-http
+kubectl delete secret python-http
+
+###############################
+# Creamos la cola de mensajes #
+###############################
+
+# Seguimos dentro de la VM de desarrollo.
+
+# Las colas se utilizan para pasar mensajes entre diferentes componentes de una
+# aplicación.
+
+# Una función puede ser invocada en base a mensajes que aparecen en una cola. La función
+# realizará algún tipo de procesamiento sobre los mensajes.
+
+# Creamos una cola (queue) en Azure. Para ello creamos una cuenta de almacenamiento.
+
+STORAGE_ACCOUNT_NAME=myaks20220201sto
+az storage account create \
+    --name $STORAGE_ACCOUNT_NAME \
+    --resource-group functions-rg \
+    --location westeurope \
+    --sku Standard_LRS \
+    --kind StorageV2
+
+# Copiamos la 'Connection string' a la cuenta de almacenamiento. Sería mejor usar Access Control (IAM),
+# con claves SAS o autenticación de Azure AD. Por simplicidad usamos las claves.
+STORAGE_CONNECTION_STRING=$(az storage account show-connection-string \
+                            --resource-group functions-rg \
+                            --name $STORAGE_ACCOUNT_NAME \
+                            --query connectionString \
+                            -o tsv)
+
+# Mostramos el valor. Posteriormente tendremos que pegarlo.
+echo $STORAGE_CONNECTION_STRING
+
+# Vamos a crear una cola ('queue') en la cuenta de almacenamiento.
+# Primero necesitamos la clave de acceso a la cuenta de almacenamiento. Uso la clave 0.
+STORAGE_ACCOUNT_KEY_0=$(az storage account keys list \
+                            --resource-group functions-rg \
+                            --account-name $STORAGE_ACCOUNT_NAME \
+                            --query [0].value \
+                            -o tsv)
+
+# Comprobamos.
+echo $STORAGE_ACCOUNT_KEY_0
+
+# Creamos una cola que se llama 'myqueue'
+az storage queue create \
+    --name myqueue \
+    --account-name $STORAGE_ACCOUNT_NAME \
+    --account-key $STORAGE_ACCOUNT_KEY_0
+
+
+#############################################
+# Crear una función que se dispare por cola #
+#############################################
+
+# Seguimos dentro de la VM.
+
+# Creamos un directorio y entramos en él.
+mkdir -p ~/js-queue
+cd ~/js-queue
+
+# Inicializamos una función.
+func init --docker
+
+# Para el runtime elegimos la opción 'node' (3).
+# Para el lenguaje elegimos 'JavaScript' (1)
+
+# NOTA: ¿Qué es 'typescript'?
+# 
+#       En 2012 en Javascript no habían clases, ni módulos, el ecosistema carecía de herramientas que optimizaran 
+#       el flujo de desarrollo, derivado precisamente por las carencias del lenguaje mismo.
+#
+#       2012 fue el año en que Typescript apareci. Una solución de Microsoft para el desarrollo de aplicaciones 
+#       con Javascript a gran escala, para ellos y para sus clientes. El proyecto originalmente se conoció como 
+#       Strada.
+#
+#       Productos como Bing y Office 365 despertaron en Microsoft la necesidad de una mejora a JavaScript que 
+#       permitiera construir productos escalables. Typescript es la solución a muchos de los problemas de 
+#       JavaScript, está pensado para el desarrollo de aplicaciones robustas, implementando características 
+#       en el lenguaje que nos permitan desarrollar herramientas más avanzadas para el desarrollo de aplicaciones.
+
+# Creamos nuestra función.
+func new
+
+# Elegimos 'Azure Queue Storage trigger' (14)
+
+# Como nombre de la función ponemos 'js-queue-trigger'
+
+# Ahora procedemos a hacer cambios en el archivo de configuración de la función.
+nano local.settings.json
+
+# Reemplazamos la cadena de conexión de 'AzureWebJobsStorage', que estará vacía, 
+# con la que copiamos antes. ('$STORAGE_CONNECTION_STRING')
+# Creamos una línea nueva que contenga la clave 'QueueConnString' y como clave la misma
+# cadena de conexió. Debe quedar así:
+#
+#   "AzureWebJobsStorage": "<Cadena de conexión>",
+#   "QueueConnString": "<Cadena de conexión>"
+
+# Guardamos cambios y salimos de nano. (CTRL+X, Y, ENTER)
+
+# Ahora tenemos que escribir la función en sí misma. La editamos.
+nano js-queue-trigger/function.json
+
+# En 'QueueName' cambiamos el nombre de la cola que aparece por en nuestro: 'myqueue'
+
+# En 'Connection' ponemos el valor 'QueueConnString'. Debe quedar así:
+# "connection": "QueueConnString"
+
+# 'function.json' debería quedar así:
+#   {
+#       "bindings": [
+#           {
+#               "name": "myQueueItem",
+#               "type": "queueTrigger",
+#               "direction": "in",
+#               "queueName": "myqueue",
+#               "connection": "QueueConnString"
+#           }
+#       ]
+#   }
+
+# Guardamos y salimos del editor.
+
+# Publicamos la función en Kubernetes. Pero antes de ello necesitamos configurar KEDA.
+# Kubernetes Event-Driven
+kubectl create ns keda
+func kubernetes install \
+    --keda \
+    --namespace keda
+
+# Comprobamos que los pods de KEDA están corriendo.
+kubectl get pod \
+    --namespace keda \
+    -w
+
+# Esperar a que los pods se inicien.
+
+# Configuramos KEDA para que mire el número de mensajes en la cola cada 5 segundos 
+# (polling-interval=5), que tenga un mínimo de 0 réplicas (min-replicas=0), un 
+# máximo de 15 réplicas (max-replicas=15) y que espere 15 segundos antes de 
+# eliminar los pods (cooldown-period=15)
+func kubernetes deploy \
+    --name js-queue \
+    --registry $ACR_NAME.azurecr.io \
+    --javascript  \
+    --polling-interval=5 \
+    --max-replicas=15 \
+    --cooldown-period=15
+
+
+# El objeto de autoescalado será el responsable de ir creando/eliminando pods. Podemos verlo así:
+kubectl get all
+
+# Como se puede observar, el despliegue de la función ha creado:
+#
+#   1) Un Deployment, llamado 'deployment.apps/js-queue', que aun no tiene pods 0/0.
+#
+#   2) Un ReplicaSet, llamado 'replicaset.apps/js-queue-XXXXXXXXXX', que está vacío.
+#
+#   3) un HPA (Horizontal Pod Autoscaler), llamado 'horizontalpodautoscaler.autoscaling/keda-hpa-js-queue',
+#      en el que puede ver que aún no hay réplicas (Replicas = 0)
+
+# Ahora vamos a crear unb mensaje en la cola para disparar a KEDA, que creará un pod.
+# En otra consola ejecutamos el siguiente comando:
+kubectl get hpa -w
+
+# Seguimos en la consola principal y creamos el mensaje. 
+#¡¡¡¡¡¡¡¡IMPORTANTE!!!!!!!!
+# El mensaje debe ir codificado en base64, de lo contrario la ejecución de la función fallará
+az storage message put \
+    --queue-name myqueue \
+    --connection-string $STORAGE_CONNECTION_STRING \
+    --content $(echo  "Mi primer mensaje en la cola" | base64)
+
+# El mensaje se puede ver en la GUI en:
+# Home / Storage accounts / <storage account name> / queue / myqueue / <Mensaje>
+
+# En la ventana donde estamos monitorizando el HPA, podremos ver que Replicas pasa de 0 a 1,
+# cuando se está procesando la función y, a los 15 segundos pasa a 0.
+
+###################################
+# Escalar la prueba de la función #
+###################################
+
+# Seguimos en la VM de desarrollo.
+
+# Ahora vamos a mandar 10000 mensajes a la cola para comprobar cómo KEDA hace el escalado.
+
+# Mantenemos en la segunda consola la monitorización de HPA.
+
+# En la consola principal vamos a usar un script de python para mandar los mensajes.
+# Este script se llamará 'sendMessages.py'.
+
+# Cambiamos al HOME.
+cd ~
+
+# Editamos el archivo.
+nano sendMessages.py
+
+# Pegamos el siguiente código, sustituyendo la connection string a la cuenta de almacenamiento.
+
+############## INICIO DEL CÓDIGO ################
+from azure.storage.queue import (
+        QueueClient,
+        BinaryBase64EncodePolicy,
+        BinaryBase64DecodePolicy
+)
+
+import os, uuid, base64
+
+connection_string="DefaultEndpointsProtocol=https;EndpointSuffix=core.windows.net;AccountName=myaks20220201sto;AccountKey=0Yv101yjR4or8e69ibhV$
+queue_client = QueueClient.from_connection_string(connection_string, "myqueue")
+
+for i in range(1, 10000):
+        message = "Este es el mensaje numero " + str(i)
+        print("Insertando  mensaje: " + str(i))
+        base64_bytes = base64.b64encode(bytes(message), 'utf-8')        
+        queue_client.send_message(base64_bytes)
+
+############## FIN DEL CÓDIGO ################
+
+
+
+# Guardamos y salimos del editor.
+
+# Para que el script funcione necesitamos instalar el paquete 'azure-storage-queue' usando 'pip'`
+# Primero instalamos 'pip'
+sudo apt install -y python-pip
+
+# Luego la dependencia.
+pip install azure-storage-queue==12.1.5
+
+# Lanzamos el script para insertar 1000 mensajes en la cola. Observar el escalado de KEDA.
+python sendMessages.py
+
+# Limpiamos.
+kubectl delete secret js-queue
+kubectl delete scaledobject js-queue
+kubectl delete deployment js-queue
+
+func kubernetes remove \
+    --namespace keda
+
+az group delete \
+    --resource-group functions-rg \
+    --yes
+
+
+
+
+
+#######################################
+#                FIN                  #  
+#                                     #
+#   NO TE OLVIDES ELIMINAR EL CLUSTER #
+#######################################
+
+
+
+
+
+#########################################################
+# Detener/iniciar el cluster para no incurrir en costes #
+#########################################################
+
+# Detención
+az aks stop --resource-group myaks-rg --name myaks
+
+# Inicio
+az aks start --resource-group myaks-rg --name myaks
+
+# Comprobación del estado del cluster
+
+az aks show --resource-group myaks-rg --name myaks
+
+
+
+#########################################################
+# Prerrequisitos para crear un cluster AKS desde la CLI #
+#########################################################
+
+# Iniciamos sesión con el usuario administrador de la subscripción.
+az login
+
+# Creamos un grupo de recursos para el cluster
+az group create --name myaks-rg --location westeurope
+
+# Habilitamos la supervisión de clusteres
+az provider register --namespace Microsoft.OperationsManagement
+az provider register --namespace Microsoft.OperationalInsights
+
+
+##########################
+# Creación de un cluster #
+##########################
+
+# Creamos el cluster
+az aks create --resource-group myaks-rg --name myaks --location westeurope --node-count 2 --node-vm-size Standard_DS2_v2 --enable-addons monitoring --generate-ssh-keys
+
+# Una vez conectado a la subscripción, el siguiente paso es conectar al servicio AKS.
+
+# El siguiente comando descarga las credenciales y las almacena en ./kube/config
+az aks get-credentials --resource-group myaks-rg --name myaks --admin --overwrite-existing
+
+# Comprobación del estado del cluster
+az aks show --resource-group myaks-rg --name myaks
+
+
+#######################
+# Eliminar el cluster #
+#######################
+
+# Eliminamos el cluster. 
+az aks delete \
+    --name myaks \
+    --resource-group myaks-rg \
+    --yes
+
+# Eliminamos el grupo de recurso que contiene el cluster.
+az group delete \
+    --resource-group myaks-rg \
+    --yes
+
+# Eliminamos el grupo de recursos que contiene los objetos de las Azure Functions.
+az group delete \
+    --resource-group functions-rg \
+    --yes
+
+# Si se ha creado el Application Gateway, eliminamos el grupo de recursos.
+# Tarda mucho, casi mejor eliminarlo de forma asíncrona desde el portal de Azure.
+az group delete \
+    --resource-group agic-rg \
+    --yes \
+    --no-wait
+
+# Si se han creado Grupos y usuario en Azure AD para la integración de AKS con AAD, los eliminamos
+az ad group delete \
+    --group "aks admins"
+
+az ad group delete \
+    --group "aks users"
+
+az ad user delete \
+    --id luke@antsalgrahotmail.onmicrosoft.com
+
+# Si se registró la característica EnablePodIdentityPreview, la desregistramos de la subscripción.
+az feature unregister \
+    --name EnablePodIdentityPreview \
+    --namespace Microsoft.ContainerService
+
+# Como el aviso indica, también hay que elecutar el siguiente comando para que se propage el cambio.
+az provider register \
+    --name Microsoft.ContainerService
+
+# Quitamos la extensión 'aks-preview' de la CLI.
+az extension remove \
+    --name aks-preview
+
+
+
+
+
+
+
+
+
