@@ -121,6 +121,25 @@ az account set --subscription 5d72e184-55f6-4093-838e-3d0f7506881a
 # Creación de un ACR (Azure Container Registry) #
 #################################################
 
+# Creo grupo de recursos para el ACR
+az group create \
+    --resource-group myACR-rg \
+    --location westeurope
+
+# Creamos el ACR.
+ACR_NAME=myacrasg20220204
+az acr create \
+    --resource-group myACR-rg \
+    --name $ACR_NAME \
+    --sku Basic
+
+# Para usar la instancia de ACR, debemos logarnos.
+az acr login \
+    --name $ACR_NAME
+
+
+
+TOTE, me da error.
 
 
 
@@ -4983,6 +5002,11 @@ az provider register \
 # Quitamos la extensión 'aks-preview' de la CLI.
 az extension remove \
     --name aks-preview
+
+# Eliminamos el ACR.
+az group delete \
+    --resource-group myACR-rg \
+    --yes
 
 
 
