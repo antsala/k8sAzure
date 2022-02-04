@@ -127,6 +127,12 @@ cd ~/k8sAzure/springBootDemo
 # Editamos archivo 'Application.java'
 code Application.java
 
+# El programa anterior expondrá un servicio REST en localhost:8080, que imprimirá
+# el mensaje "Hola Mundo!"
+
+
+
+
 
 
 #################################################
