@@ -565,7 +565,7 @@ kubectl get all
 # y administrar las aplicaciones de Kubernetes. Para ello, se escribe algo llamado
 # 'charts'.
 #
-# Puedes pensar en los charts de Help como archivos YAML parametrizados.
+# Puedes pensar en los charts de Helm como archivos YAML parametrizados.
 
 # Vamos a instalar Helm en Ubuntu.
 curl -fsSL -o get_helm.sh https://raw.githubusercontent.com/helm/helm/master/scripts/get-helm-3
@@ -5063,11 +5063,16 @@ az aks show --resource-group myaks-rg --name myaks
 az login
 
 # Creamos un grupo de recursos para el cluster
-az group create --name myaks-rg --location westeurope
+az group create \
+    --name myaks-rg \
+    --location westeurope
 
 # Habilitamos la supervisión de clusteres
-az provider register --namespace Microsoft.OperationsManagement
-az provider register --namespace Microsoft.OperationalInsights
+az provider register \
+    --namespace Microsoft.OperationsManagement
+
+az provider register \
+--namespace Microsoft.OperationalInsights
 
 
 ##########################
@@ -5075,15 +5080,28 @@ az provider register --namespace Microsoft.OperationalInsights
 ##########################
 
 # Creamos el cluster
-az aks create --resource-group myaks-rg --name myaks --location westeurope --node-count 2 --node-vm-size Standard_DS2_v2 --enable-addons monitoring --generate-ssh-keys
+az aks create \
+    --resource-group myaks-rg \
+    --name myaks \
+    --location westeurope \
+    --node-count 2 \
+    --node-vm-size Standard_DS2_v2 \
+    --enable-addons monitoring \
+    --generate-ssh-keys
 
 # Una vez conectado a la subscripción, el siguiente paso es conectar al servicio AKS.
 
 # El siguiente comando descarga las credenciales y las almacena en ./kube/config
-az aks get-credentials --resource-group myaks-rg --name myaks --admin --overwrite-existing
+az aks get-credentials \
+    --resource-group myaks-rg -\
+    -name myaks \
+    --admin \
+    --overwrite-existing
 
 # Comprobación del estado del cluster
-az aks show --resource-group myaks-rg --name myaks
+az aks show \
+    --resource-group myaks-rg \
+    --name myaks
 
 
 #######################
