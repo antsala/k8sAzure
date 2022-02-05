@@ -186,13 +186,6 @@ sudo docker image prune -a -f
 sudo docker run --rm $MI_TAG
 
 
-              
-
-
-
-
-
-
 
 ###########################################
 # Creación de un cluster AKS desde la CLI #
@@ -224,12 +217,14 @@ az aks create \
 # El siguiente comando descarga las credenciales y las almacena en ./kube/config
 az aks get-credentials \
     --resource-group myaks-rg \
-    --name myaks --admin
+    --name myaks --admin \
+    --overwrite-existing
 
 # Comprobación del estado del cluster
 az aks show \
     --resource-group myaks-rg \
-    --name myaks
+    --name myaks 
+
 
 #################################################
 # Instalación de kubetcl por medio de Azure-cli #
@@ -240,6 +235,37 @@ sudo az aks install-cli
 kubectl cluster-info
 kubectl get nodes
 
+
+#######################
+# Conectar AKS al ACR #
+#######################
+
+# Vamos a conectar el cluster al registry que creamos antes. 
+# 
+# Aunque este procedimiento se puede hacer en tiempo de creación del cluster,
+# lo explicamos de forma independiente, para aprender también como desconectamos
+# al cluster del ACR.
+
+# Comprobamos el valor de la variable.
+echo $ACR_NAME
+
+# Conectamos el cluster al ACR.
+az aks update \
+    --name myaks \
+    --resource-group myaks-rg \
+    --attach-acr $ACR_NAME
+
+
+
+
+
+# LIMPIAMOS.
+
+# Desconectamos el cluster del ACR.
+az aks update \
+    --name myaks \
+    --resource-group myaks-rg \
+    --detach-acr $ACR_NAME
 
 ##########################################
 # Despliegue de una aplicación de prueba #
