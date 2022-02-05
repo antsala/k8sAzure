@@ -46,7 +46,6 @@ sudo snap install --classic code
 git clone https://github.com/antsala/k8sAzure ~/k8sAzure
 
 
-
 #########################################################
 # Capítulo 1: Introduction to containers and Kubernetes #
 #########################################################
