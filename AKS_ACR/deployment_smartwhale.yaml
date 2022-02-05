@@ -16,5 +16,5 @@ spec:
     spec:
       containers:
       - name: smartwhale
-        image: <acr-name>.azurecr.io/antsala/smartwhale:v1
+        image: <acr-name>.azurecr.io/antsala/smartwhale:latest
         
