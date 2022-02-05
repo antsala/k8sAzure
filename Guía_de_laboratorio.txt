@@ -132,13 +132,65 @@ az acr create \
     --name $ACR_NAME \
     --sku Basic
 
-# Para usar la instancia de ACR, debemos logarnos.
-az acr login \
-    --name $ACR_NAME
+# Almacenamos en servidor de login
+ACR_LOGIN_SERVER=$(az acr show \
+                    --name $ACR_NAME \
+                    --query loginServer \
+                    --output tsv)
+
+# Comprobamos.
+echo $ACR_LOGIN_SERVER
+
+# Para usar la instancia de ACR, debemos logarnos. Existen diferentes formas de
+# conseguirlo, alguna hace uso del propio demonio de Docker. Leer la documentación
+# https://docs.microsoft.com/en-us/azure/container-registry/container-registry-authentication?tabs=azure-cli
+
+# El método elegido es el de la exposición del token de autenticación, que es mejor para
+# los scripts.
+
+# Obtengo el token para acceder al ACR.
+ACR_TOKEN=$(az acr login \
+            --name $ACR_NAME \
+            --expose-token \
+            --query accessToken \
+            --output tsv )
+
+# Comprobamos.
+echo $ACR_TOKEN
+
+# Nos logamos al ACR con el token obtenido.
+sudo docker login \
+    $ACR_LOGIN_SERVER \
+    --username 00000000-0000-0000-0000-000000000000 \
+    --password $ACR_TOKEN
+
+# Etiquetamos la imagen para poder subirla al ACR.
+MI_TAG=$ACR_LOGIN_SERVER/antsala/smartwhale
+
+# Comprobamos.
+echo $MI_TAG
+
+# Etiquetamos.
+sudo docker image tag smartwhale $MI_TAG
+
+# Listamos las imágenes.
+sudo docker image ls
+
+# Subimos la imagen.
+sudo docker image push $MI_TAG
+
+# Borramos las imagenes locales.
+sudo docker image prune -a -f
+
+# Lanzamos contenedor descargando imagen desde ACR.
+sudo docker run --rm $MI_TAG
+
+
+              
 
 
 
-TOTE, me da error.
+
 
 
 
@@ -1292,7 +1344,8 @@ az network application-gateway create \
 appgwId=$(az network application-gateway show \
             --name agic \
             --resource-group agic-rg  \
-            -o tsv --query "id")
+            --output tsv \
+            --query "id")
 
 az aks enable-addons \
     --name myaks \
@@ -1305,16 +1358,19 @@ az aks enable-addons \
 nodeResourceGroup=$(az aks show \
                         --name myaks \
                         --resource-group myaks-rg \
-                        -o tsv --query "nodeResourceGroup")
+                        --output tsv \
+                        --query "nodeResourceGroup")
 
 aksVnetName=$(az network vnet list \
                 --resource-group $nodeResourceGroup \
-                -o tsv --query "[0].name")
+                --output tsv \
+                --query "[0].name")
 
 aksVnetId=$(az network vnet show \
                 --name $aksVnetName \
                 --resource-group $nodeResourceGroup \
-                -o tsv --query "id")
+                --output tsv \
+                --query "id")
 
 az network vnet peering create \
     --name AppGWtoAKSVnetPeering \
@@ -1327,7 +1383,8 @@ az network vnet peering create \
 appGWVnetId=$(az network vnet show \
                 --name agic-vnet \
                 --resource-group agic-rg \
-                -o tsv --query "id")
+                --output tsv \
+                --query id)
 
 az network vnet peering create \
     --name AKStoAppGWVnetPeering \
@@ -1941,7 +1998,8 @@ az aks update --resource-group myaks-rg --name myaks --enable-aad --aad-admin-gr
 # NOTA: En el UPN poner el dominio verificado apropiado.
 ADMIN_USER_ID=$(az ad user show \
                     --id antsalgra_hotmail.com#EXT#@antsalgrahotmail.onmicrosoft.com \
-                    --query objectId -o tsv)
+                    --query objectId \
+                    --output tsv)
 
 # Agregamos al admin al grupo de administradores del cluster.
 az ad group member add \
@@ -1959,14 +2017,16 @@ LUKE_USER_ID=$(az ad user create \
                 --password useTheForce# \
                 --user-principal-name luke@antsalgrahotmail.onmicrosoft.com \
                 --mail-nickname luke \
-                --query objectId -o tsv)
+                --query objectId \
+                --output tsv)
 
 # Creamos otro grupo de seguridad, llamado 'aks users', donde pondremos a los usuarios del cluster sin rol administrativo.
 AKS_USERS_GROUP_ID=$(az ad group create \
                         --display-name "aks users" \
                         --mail-nickname aksusers \
                         --description "usuarios de clusteres AKS" \
-                        --query objectId -o tsv)
+                        --query objectId \
+                        --output tsv)
 
 # Agregamos a Luke al grupo de usuarios del cluster.
 az ad group member add \
@@ -1980,7 +2040,8 @@ az ad group member add \
 AKS_ID=$(az aks show \
             --resource-group myaks-rg \
             --name myaks \
-            --query id -o tsv)
+            --query id \
+            --output tsv)
 
 # Es algo así: '/subscriptions/5d72e184-55f6-4093-838e-3d0f7506881a/resourcegroups/myaks-rg/providers/Microsoft.ContainerService/managedClusters/myaks'
 #Lo consultamos.
