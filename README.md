@@ -8,5 +8,4 @@ Los requisitos son:
 
 2) Una máquina virtual con sistema operativo Linux (Ubuntu) que se usará para realizar los ejercicios.
 
-La guía para las prácticas está en el archivo 'Guía_de_laboratorios.txt'
-
+La guía para las prácticas está en el archivo 'Guía_de_laboratorios.txt'.
