@@ -695,8 +695,8 @@ kubectl delete pvc --all
 # La primera dimensión del escalado consiste en determinar el número de pods,
 # mientras que la segunda es el número de nodos del cluster.
 
-# Nos situamos el el directorio del capítulo 4
-cd ~/Hands-On-Kubernetes-on-Azure/Chapter04/
+# Nos situamos en el directorio del capítulo 4
+cd ~/k8sAzure/Escalar_APPs
 
 # Desplegamos la aplicación Guestbook.
 kubectl create -f guestbook-all-in-one.yaml
@@ -705,7 +705,8 @@ kubectl create -f guestbook-all-in-one.yaml
 # Para ello editamos el servicio directamente.
 kubectl edit service frontend
 
-# Se usa el editor 'vi'. Pulsar 'i'. Cambiar en el código 'ClusterIP' por 'LoadBalancer'. Luego :wq!
+# Se usa el editor 'vi'. Pulsar 'i'. Cambiar en el código el tipo de 'ClusterIP' a 
+# 'LoadBalancer'. Luego :wq!
 
 ###############################################
 # Escalar el componente frontend de GuestBook #
@@ -758,18 +759,21 @@ kubectl get pods -w
 
 # En la terminal original vamos a instalar un programa llamado 'hey' cuya finalidad
 # es meter carga en el servidor web. Antes instalamos 'go'
-sudo apt  install golang-go
+sudo apt install golang-go
 export GOPATH=~/go
 export PATH=$GOPATH/bin:$PATH
 go get -u github.com/rakyll/hey
 
 # Metemos carga (20 millones de Request) Usar la IP Externa del servicio de frontend.
-hey -z 20m http://20.86.236.20
+hey -z 20m http://<Poner aqúi la IP Externa del Servicio>
 
 # Esperar unos minutos y ver en la segunda terminal como se escalan los pods.
 # Hacer CTRL+C en 'hey' y esperar un tiempo para ver como se quitan los pods.
 # Tarda un buen rato (al menos 10 minutos) Lo podemos ver con detalle describiendo el HPA.
+# En una tercera terminal:
 kubectl describe hpa frontend-scaler
+
+# Parar (CTRL+C) 'hey' y comprobar como se hace el desescalado (Tarda un buen rato)
 
 # Limpiamos los recursos.
 kubectl delete -f hpa.yaml
@@ -786,10 +790,10 @@ kubectl get all
 # Primero obtenemos el nombre del nodepool del cluster.
 az aks nodepool list --resource-group myaks-rg --cluster-name myaks | grep name
 
-# En este ejemplo es 'nodepool1'.
-# Dejo el número de nodos de 'nodepool1' a 1.
+# Tomar el nombre del NopePool de la salida anterior.
+# Vamos a poner el número de nodos del NodePool a 1.
 az aks nodepool scale \
-    --name nodepool1  \
+    --name <Poner aquí en nombre del NodePool>  \
     --node-count 1 \
     --resource-group myaks-rg \
     --cluster-name myaks
@@ -806,9 +810,9 @@ kubectl get all
 ############################
 
 # El autoescalado del cluster vigila el número de pods que no pueden ser planificados debido 
-# a recursos insuficientes (falta CPU o de RAM). Para forzar el autoescalado, forzaremos el
-# deployment de forma que no se puedan poner a correr todos los pods. A continuación configuraremos
-# el autoescalado del cluster.
+# a recursos insuficientes (falta CPU o de RAM en los nodos). Para demostrar el autoescalado, 
+# forzaremos el deployment de forma que no se puedan poner a correr todos los pods. 
+# A continuación configuraremos el autoescalado del cluster.
 
 # Para forzar que el cluster se quede sin recursos, modificamos el deployment 'redis-replica'
 kubectl scale deployment redis-replica --replicas 5
@@ -816,6 +820,9 @@ kubectl scale deployment redis-replica --replicas 5
 # Coprobamos que hay pods que no se pueden planificar porque no hay recursos.
 # Mostrarán el estado 'pending'
 kubectl get pods
+
+# Para ver que no hay CPU, ejecutar este comando.
+kubectl describe pod <Poner el nombre de un pod que esté en estado 'pending'>
 
 # Habilitamos el autoescalado del cluster.
 az aks nodepool update \
@@ -826,8 +833,8 @@ az aks nodepool update \
     --min-count 1 \
     --max-count 2
 
-# Hay que esperar unos minutos a que se despliegue el nuevo nodo y se replanifiquen los pods.
-# Comprobarlo con
+# Hay que esperar unos minutos (aprox. 5) a que se despliegue el nuevo nodo y se replanifiquen los pods.
+# Comprobarlo con:
 kubectl get pods
 kubectl get nodes
 
@@ -929,9 +936,8 @@ kubectl get all
 ###############################################
 
 # Como hemos realizado cambios a los archivos YAML, recargamos el repositorio.
-cd ~/Hands-On-Kubernetes-on-Azure/
+# Asegurar que no tenemos editado ningún archivo.
 git reset --hard 
-cd ~/Hands-On-Kubernetes-on-Azure/Chapter04
 
 # Desplegamos la app.
 kubectl create -f guestbook-all-in-one.yaml
@@ -942,7 +948,7 @@ kubectl get all
 # Vamos a editar el servicio frontend en el cluster (Ya lo hicimos anteriormente)
 kubectl edit service frontend
 
-# Localizar 'ClusterIP'. Pulsar 'i' y cambiar a 'LoadBalancer'. ESC + :wq!
+# Localizar 'type: ClusterIP'. Pulsar 'i' y cambiar a 'LoadBalancer'. ESC + :wq!
 # Mostrar los servicios y comprobar que el fr frontend ha cambiado a tipo 'LoadBalancer'
 kubectl get service
 
@@ -953,12 +959,15 @@ kubectl get service
 
 # El patch es especialmente útil cuando no se tiene acceso por completo a los archivos YAML.
 # Se puede usar en sistemas automatizados CI/CD.
+#
 # El parcheo se puede realizar de dos formas: Por medio de un archivo YAML que incluya los cambios
 # o de forma inline con kubectl.
 
 # Vamos a cambiar de nuevo la versión de la imagen de 'v4' a 'v3'. El archivo YAML ya está escrito.
-# Lo editamos.
+# Lo editamos, solo para ver el parche.
 code frontend-image-patch.yaml
+
+# Salimos del editor sin cambiar nada.
 
 # Para aplicar el parche usamos este truco.
 kubectl patch deployment frontend --patch "$(cat frontend-image-patch.yaml)"
@@ -1009,7 +1018,7 @@ kubectl describe statefulset wp-mariadb | grep Image
 # Esto es así porque la app WordPress está configurada para usar estos passwords
 # para poder conectar con la base de datos.
 #
-# Por defecto, la actualización de la app usande HELM generará nuevos passwords, y
+# Por defecto, la actualización de la app usando HELM generará nuevos passwords, y
 # necesitamos proporcionar los correctos.
 #
 # Los passwords se almacenan en secretos de K8s (que serán tratados más adelante)
@@ -1017,20 +1026,20 @@ kubectl describe statefulset wp-mariadb | grep Image
 kubectl get secret wp-mariadb -o yaml
 
 # Sacamos los passwords desde los secretos del cluster.
-export WORDPRESS_PASSWORD=$(kubectl get secret \
-                                --namespace "default" \
-                                wp-wordpress \
-                                -o jsonpath="{.data.wordpress-password}" | base64 --decode)
+WORDPRESS_PASSWORD=$(kubectl get secret wp-wordpress \
+                        --namespace "default" \
+                        --output jsonpath="{.data.wordpress-password}" \
+                        | base64 --decode)
 
-export MARIADB_ROOT_PASSWORD=$(kubectl get secret \
-                                --namespace "default" \
-                                wp-mariadb \
-                                -o jsonpath="{.data.mariadb-root-password}" | base64 --decode)
+MARIADB_ROOT_PASSWORD=$(kubectl get secret wp-mariadb \
+                            --namespace "default" \
+                            --output jsonpath="{.data.mariadb-root-password}" \
+                            | base64 --decode)
 
-export MARIADB_PASSWORD=$(kubectl get secret \
-                                --namespace "default" \
-                                wp-mariadb \
-                                -o jsonpath="{.data.mariadb-password}" | base64 --decode)
+MARIADB_PASSWORD=$(kubectl get secret wp-mariadb \
+                    --namespace "default" \
+                    --output jsonpath="{.data.mariadb-password}" \
+                    | base64 --decode)
 
 # Comprobamos los passwords.
 echo $WORDPRESS_PASSWORD
@@ -1038,7 +1047,7 @@ echo $MARIADB_ROOT_PASSWORD
 echo $MARIADB_PASSWORD
 
 
-# Actualizamos la app con Helm proporcionando los passwords.
+# Actualizamos la app a la nueva versión con Helm proporcionando los passwords.
 helm upgrade wp bitnami/wordpress \
     --set mariadb.image.tag=10.5.13-debian-10-r51\
     --set mariadb.auth.password=$MARIADB_PASSWORD \
@@ -1058,7 +1067,7 @@ kubectl delete pv --all
 # Capítulo 5: Solucionar problemas comunes en AKS #
 ###################################################
 
-# Hay dos areas donde las cosas pueden ir mal. O bien hay problemas en el cluster, 
+# Hay dos áreas donde las cosas pueden ir mal. O bien hay problemas en el cluster, 
 # o la aplicación tiene problemas.
 #
 # Un nodo del cluster puede caerse. Se debe a un error en la infraestructura de Azure
@@ -1069,7 +1078,7 @@ kubectl delete pv --all
 #
 # Un tercero está relacionado con el montaje del almacenamiento, que ocurre cuando un nodo
 # tiene problemas. K8s NO desconectará los discos que tiene asignado el nodo con problemas.
-# Esto significa que eso discos no se pueden usar en otro nodo por los pods que lo necesiten.
+# Esto significa que esos discos no se pueden usar en otro nodo por los pods que lo necesiten.
 
 ############################################
 # Problemas cuando cae un nodo del cluster #
