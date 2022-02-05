@@ -255,6 +255,7 @@ az aks update \
     --resource-group myaks-rg \
     --attach-acr $ACR_NAME
 
+# Vamos a lanzar un deployment que use imágenes desde el ACR.
 
 
 
