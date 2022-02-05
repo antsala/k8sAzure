@@ -256,17 +256,45 @@ az aks update \
     --attach-acr $ACR_NAME
 
 # Vamos a lanzar un deployment que use imágenes desde el ACR.
+cd ~/k8sAzure/AKS_ACR
 
+# Editamos el archivo 'deployment_smartwhale.yaml'
+code deployment_smartwhale.yaml
 
+# Línea 19:     Poner el nombre del ACR que hemos creado antes ($ACR)
 
+# Implementamos.
+kubectl apply -f deployment_smartwhale.yaml
 
-# LIMPIAMOS.
+# ¡¡¡¡¡¡IMPORTANTE!!!!!!
+# La imagen de contenedor tiene una aplicación que al ejecutarse, muestra un mensaje y finaliza
+# su ejecución. Si miramos el deployment, si pods están detenidos por la razón explicada.
+# El replicaSet hace su trabajo y los vuelve a lanzar. 
+
+# Mostramos los objetos.
+kubectl get all
+
+# Mostramos el log (salida estándar del pod).
+kubectl logs <Poner aquí el nombre de uno de los pods>
+
+# Ya está demostrado cómo conectar AKS con ACR. Ahora limpiamos.
+
+# Eliminamos el deployment.
+kubectl delete -f deployment_smartwhale.yaml
+
+# Comprobamos que ha eliminado los objetos.
+kubectl get all
 
 # Desconectamos el cluster del ACR.
 az aks update \
     --name myaks \
     --resource-group myaks-rg \
     --detach-acr $ACR_NAME
+
+# Eliminamos el ACR.
+az group delete \
+    --resource-group myACR-rg \
+    --yes
 
 ##########################################
 # Despliegue de una aplicación de prueba #
