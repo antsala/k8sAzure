@@ -1314,6 +1314,7 @@ kubectl get pods -o wide
 # '000001', es el id de la instancia.
 VMMS_NAME=<Poner aquí el 'nombre del vmms'>
 INSTANCE_ID=<Poner aquí el 'id de la instancia'>
+MARIADB_POD=<Ponr aquí el nombre del pod de 'mariaDB'>
 
 # Comprobamos.
 echo $VMMS_NAME
@@ -1325,48 +1326,49 @@ az vmss stop \
     --name $VMMS_NAME \
     --instance-id $INSTANCE_ID
 
-# Comprobamos lo que hace Kubernetes. Pueden pasar hasta 5 minutos antes que 
+# Comprobamos lo que hace Kubernetes. Pueden pasar al menos 5 minutos antes que 
 # K8s determine qué hacer con el nodo caído.
 kubectl get pods -o wide -w
 
-# El nuevo pod ser queda bloqueado en el estado 'ContainerCreating'. Veamos que ha pasado.
-kubectl describe pods/wp-wordpress-<pod-id>
+# NOTA, si tarda mucho 'ayudamos' a la eliminación.
+kubectl delete pod $MARIADB_POD --grace-period 0 --force
+
+# El nuevo pod se quedará bloqueado en el estado 'ContainerCreating'. 
+# Veamos que ha pasado.
+kubectl describe pod $MARIADB_POD
 
 # El estado nos dice que hay un problema con el volumen. Veremos 2 errores
-# relacionados con el volumen. El error 'FailedAttachVolume' nos dice que el
-# volumen esta siendo usado por otro pod. El error 'FailedMount' dice que el 
-# pod no puede montar el volumen.
+# relacionados con el volumen:
 #
-# Vamos a resolver el problema eliminando el pod viejo que se ha quedado bloqueado
-# en el estado 'Terminating'.
-kubectl delete pod wp-wordpress-<pod-id> --force
+# El error 'FailedAttachVolume' nos dice que el volumen está siendo usado por otro nodo. 
+#
+# El error 'FailedMount' dice que el pod no puede montar el volumen.
+
+# Azure liberará el volumen para que pueda ser montado en otro nodo de forma
+# automática, pero llevará bastante tiempo.
 
 # Comprobamos el estado de los pods durante unos minutos (15 minutos) a que se levante el pod
 # y monte el volumen.
 kubectl get pods -w
 
-# Una vez que lo haya levantado, miramos lo que ha ocurrido.
-kubectl describe pod wp-wordpress-<pod-id>
+# Una vez que lo haya levantado, podemos comprobar desde el navegador que todo vuelve
+# a funcionar.
 
 # Limpiamos recursos.
 helm delete wp
 kubectl delete pvc --all
 kubectl delete pv --all
 
-# Levantamos el nodo caído.
-# Tomamos en nombre del grupo de recursos donde reside el scale set del cluster.
-export vmssRG=$(az aks show \
-                    --name myaks \
-                    --resource-group myaks-rg \
-                    --query nodeResourceGroup -o tsv)
-echo $vmssRG
+# Nota, los discos de Azure no se borran al eliminar el PVC.
 
-# Listamos los nodos del cluster y nos quedamos con el nombre del que más pods contiene.
-kubectl get nodes
-az vmss stop \
+# Levantamos el nodo caído.
+az vmss start \
     --resource-group $vmssRG  \
-    --name aks-nodepool1-22520642-vmss \
-    --instance-id 0
+    --name $VMMS_NAME \
+    --instance-id $INSTANCE_ID
+
+# Comprobamo que se levante.
+kubectl get nodes
 
 
 ################################################
@@ -1397,7 +1399,7 @@ az vmss stop \
 # hacia la misma IP o la descarga (offloading) de la terminación TLS hacia la
 # ingress.
 #
-# Para crear un ingress en Kubernetes, nesesitaremos un 'Controlador Ingress'.
+# Para crear un ingress en Kubernetes, necesitaremos un 'Controlador Ingress'.
 # Este es un programa que puede crear, configurar y administrar la entrada.
 #
 # Kubernetes no viene con un controlador ingress por defecto, por lo que hay que
@@ -1407,7 +1409,7 @@ az vmss stop \
 # Azure Application Gateway ofrece multitud de características avanzadas, como
 # WAF (Web Application Firewall).
 #
-# Hay dos formas de configurar AGIC, o bien usando Helm o como un complemento al
+# Hay dos formas de configurar AGIC, o bien usando Helm o, como un complemento al
 # servicio AKS. Esta última tiene la ventaja de que puede ser actualizado automáticamente
 # por Microsoft, asegurando que el entorno está siempre actualizado.
 
@@ -1422,14 +1424,16 @@ az group create \
     --location westeurope
 
 # Creamos los componentes de red necesarios para el Application Gateway.
-# Primero una IP pública. Nota: dns-name debe ser único. 
-# Tomará la forma: asgasg07012022.westeurope.cloudapp.azure.com
+# Primero un nombre dns para la IP pública. Nota: debe ser único.
+PUBLIC_IP_DNS_NAME=pipnameasg20220205
+
+# El registro A de esta IP omará la forma: $PUBLIC_IP_DNS_NAME.westeurope.cloudapp.azure.com
 az network public-ip create \
     --name agic-pip \
     --resource-group agic-rg \
     --allocation-method Static \
     --sku Standard \
-    --dns-name asgasg07012022
+    --dns-name $PUBLIC_IP_DNS_NAME
 
 # Y ahora una red virtual.
 az network vnet create \
@@ -1461,12 +1465,12 @@ az network application-gateway create \
 # Application Gateway pueda enviar tráfico al cluster de K8s.
 
 # Para habilitar la integración entre el cluster y el Application Gateway,
-# hacemos lo siguiente.
+# hacemos lo siguiente:
 appgwId=$(az network application-gateway show \
             --name agic \
             --resource-group agic-rg  \
-            --output tsv \
-            --query "id")
+            --query id \
+            --output tsv)
 
 az aks enable-addons \
     --name myaks \
@@ -1474,24 +1478,23 @@ az aks enable-addons \
     --addons ingress-appgw \
     --appgw-id $appgwId
 
-# Ahora hay que conectar la red del Application Gateway con la red del cluster
-# AKS.
+# Ahora hay que conectar la red del Application Gateway con la red del cluster AKS.
 nodeResourceGroup=$(az aks show \
                         --name myaks \
                         --resource-group myaks-rg \
-                        --output tsv \
-                        --query "nodeResourceGroup")
+                        --query "nodeResourceGroup" \
+                        --output tsv)
 
 aksVnetName=$(az network vnet list \
                 --resource-group $nodeResourceGroup \
-                --output tsv \
-                --query "[0].name")
+                --query [0].name \
+                --output tsv) 
 
 aksVnetId=$(az network vnet show \
                 --name $aksVnetName \
                 --resource-group $nodeResourceGroup \
-                --output tsv \
-                --query "id")
+                --query id \
+                --output tsv)
 
 az network vnet peering create \
     --name AppGWtoAKSVnetPeering \
@@ -1500,12 +1503,11 @@ az network vnet peering create \
     --remote-vnet $aksVnetId \
     --allow-vnet-access
 
-
 appGWVnetId=$(az network vnet show \
                 --name agic-vnet \
                 --resource-group agic-rg \
-                --output tsv \
-                --query id)
+                --query id \
+                --output tsv)
 
 az network vnet peering create \
     --name AKStoAppGWVnetPeering \
@@ -1521,9 +1523,11 @@ az network vnet peering create \
 # Añadir una regla de entrada (Ingress) a la aplicación #
 #########################################################
 
-# Vamos a desplegar la aplicación 'Guestbook' e exponerla por medio 
-# de una ingress.
-cd ~/Hands-On-Kubernetes-on-Azure/Chapter06
+# Cambiamos al directorio de trabajo.
+cd ~/k8sAzure/HTTPS
+
+# Vamos a desplegar la aplicación 'Guestbook' y exponerla por medio 
+# de una ingress. 
 kubectl create -f guestbook-all-in-one.yaml
 
 # En el directorio tenemos el archivo 'simple-frontend-ingress.yaml'
@@ -1544,10 +1548,19 @@ code simple-frontend-ingress.yaml
 # Creamos el objeto ingress.
 kubectl apply -f simple-frontend-ingress.yaml
 
-# Para probar la app, nos conectamos con un navegador a:
-http://asgasg07012022.westeurope.cloudapp.azure.com
+# Probar la app. El tráfico ya entra por el AGIC.
+# Las reglas ya no se configuran desde Azure, sino desde archivos
+# YAML. El driver AGIC se las pasará a Azure.
+URL_APP=http://$PUBLIC_IP_DNS_NAME.westeurope.cloudapp.azure.com
+
+# Comprobamos.
+echo $URL_APP
+
+# Conectar con un navegador.
 
 # Comprobar que el servicio de frontend NO TIENE IP EXTERNA PÚBLICA.
+kubectl get service
+
 # Esto será así porque es de tipo ClusterIP y no LoadBalancer.
 #
 # Así que el tráfico queda así:
@@ -1595,11 +1608,11 @@ code certificate-issuer.yaml
 #                   caso es Let's Encrypt.
 #
 # Líneas 6-10:      Aquí ponemos la configuración de Let's Encrypt y apuntamos al 
-#                   servidor staging. MUY IMPORTANTE. Poner el email.
+#                   servidor staging. ¡¡¡¡¡MUY IMPORTANTE!!!!!. Poner el email.
 #
 # Líneas 11-14:     Aquí se pone la configuración para que el cliente ACME certifique la propiedad
 #                   del dominio. Hacemos apuntar a Let's Encrypt a la ingress del Application Gateway
-#                   para que verifique que eres el propietario del dominio para el que solicitarás un
+#                   para que verifique que somos el propietario del dominio para el que solicitamos un
 #                   certificado. Más info: https://letsencrypt.org/es/docs/client-options/
 
 # Guardarmos los cambios en el archivo y creamos el objeto.
@@ -1612,16 +1625,20 @@ Si hubiera problemas, lo describimos.
 kubectl describe issuer letsencrypt-staging
 
 
-
-
 ##################################################
 # Crear el certificado TLS y asegurar el ingress #
 ##################################################
 
 # Hay dos formas de configurar certificados. O bien creamos un certificado
-# manualmente y lo enlazamos con la ingress, o podemos configurar al controlador ingress, de forma que
-# 'cert-manager' cree el certificado automáticamente. Utilizaremos el segundo 
-# método.
+# manualmente y lo enlazamos con la ingress, o podemos configurar al controlador ingress, 
+# de forma que 'cert-manager' cree el certificado automáticamente. 
+#
+# Utilizaremos el segundo método.
+
+INGRESS_DNS=$PUBLIC_IP_DNS_NAME.westeurope.cloudapp.azure.com
+
+# Copiar el valor.
+echo $INGRESS_DNS
 
 # Abrimos el archivo 'ingress-with-tls.yaml'
 code ingress-with-tls.yaml 
@@ -1629,13 +1646,14 @@ code ingress-with-tls.yaml
 # Líneas 7-8:       Se añaden dos anotaciones al ingress que apuntan al emisor de certificado y al 
 #                   'acme-challenge' para demostrar la propiedad del dominio.
 #
-# Línea 20:         Poner aquí el nombre de dominio del ingress. En este ejemplo sería 
-#                   'asgasg07012022.westeurope.cloudapp.azure.com'. Esto es obligatorio porque Let's 
-#                   Encrypt solo entrega certificados a los dominios (no IPs)
+# Línea 20:         ¡¡¡¡¡¡¡¡IMPORTANTE!!!!!!Poner aquí el nombre de dominio del ingress. 
+#                   $INGRESS_DNS. Esto es obligatorio porque Let's Encrypt solo entrega certificados 
+#                   a los dominios (no IPs)
 #
-# Línea 21-24:      ESta es la configuració TLS del ingress. También hay que poner el nombre DNS anterior,
-#                   'asgasg07012022.westeurope.cloudapp.azure.com', así como el nombre del secreto que será
-#                   creado para almacenar el certificado.
+# Línea 23:         Esta es la configuració TLS del ingress. También hay que poner el nombre DNS anterior,
+#                   $INGRESS_DNS.
+#
+# Línea 24:         Este es el nombre del secreto que será creado para almacenar el certificado.
 
 # Guardar el archivo y actualizar el objeto ingress con el siguiente comando.
 kubectl apply -f ingress-with-tls.yaml
@@ -1643,23 +1661,19 @@ kubectl apply -f ingress-with-tls.yaml
 # 'cert-manager' tardará aproximadamente 1 minuto en solicitar el certificado y configurar la ingress para 
 # que lo use. Los objetos intermedios que se crean son:
 #
-# Un objeto 'certificate', que podemos ver así:
-kubectl get certificate
+# Un objeto 'certificate', que podemos ver así (esperar a que ponga 'True')
+kubectl get certificate -w
 
-# El certificado aún no está listo. Hay otro objeto que 'cert-manager' creó para obtener el certificado. Es 
-# la petición. Podemos verificar su estado así:
+# Hay otro objeto que 'cert-manager' creó para obtener el certificado. Es la petición. 
+# Podemos verificar su estado así:
 kubectl get certificaterequest
 
-# Más info con 'describe'. Se está a la espera de que Let's Encrypt emita el certificado. Esto puede verse en la línea
-# 'Waiting on certificate issuance from order default/frontend-tls-nsm44-2776352567: "pending"'
-# Esperar.
+# Podemos ver el flujo de la petición así:
 kubectl describe certificaterequest
 
-# Cuando termine, comprobar que READY ya es 'true'.
-kubectl get certificaterequest
 
 # Comprobar que todo funciona conectando por TLS con un navegador. 
-https://asgasg07012022.westeurope.cloudapp.azure.com
+echo https://$INGRESS_DNS
 
 # Dará un error de certificado porque estamos usando el servidor de staging de Let's Encrypt.
 # https://letsencrypt.org/docs/staging-environment/ y así no le sobrecargamos sus sistemas. 
@@ -1677,6 +1691,9 @@ code certificate-issuer-prod.yaml
 
 # En la línea 7, ponemos el email, Guardamos el archivo.
 
+# Copiar el valor.
+echo $INGRESS_DNS
+
 # Editamos el archivo 'ingress-with-tls-prod.yaml'
 code ingress-with-tls-prod.yaml
 
@@ -1688,18 +1705,21 @@ kubectl apply -f ingress-with-tls-prod.yaml
 
 # Hay que esperar un minuto a que se descargue e instale el certificado.
 # Esperar a que READY sea 'true'
-kubectl get certificates
+kubectl get certificates -w
 
 # Comprobar, de nuevo,  que todo funciona conectando por TLS con un navegador. 
-https://asgasg07012022.westeurope.cloudapp.azure.com
+echo https://$INGRESS_DNS
 
 # Para borrar los recursos que dimos de alta.
 kubectl delete -f https://github.com/jetstack/cert-manager/releases/download/v1.1.0/cert-manager.yaml
 
-az aks disable-addons --name myaks --resource-group myaks-rg --addon ingress-appgw
+az aks disable-addons \
+    --name myaks \
+    --resource-group myaks-rg \
+    --addon ingress-appgw
 
 # Recordar que el Application Gateway sigue estando en Azure, habría que eliminarlo.
-# Mirar al final, borrar el grupo de recursos 'agic-rg'
+# Mirar al final del documento, borrar el grupo de recursos 'agic-rg'
 
 
 ###############################################################
