@@ -301,8 +301,8 @@ az group delete \
 # Despliegue de una aplicación de prueba #
 ##########################################
 
-# Entramos en el capítulo 2
-cd Hands-On-Kubernetes-on-Azure/Chapter02/
+# Entramos en el directorio de trabajo.
+cd ~/k8sAzure/TestAPP
 
 # Editamos el archivo 'azure-vote.yaml'
 code azure-vote.yaml
@@ -328,9 +328,9 @@ kubectl delete -f azure-vote.yaml
 kubectl get all
 
 
-#############################################
-# Capítulo 3: Application deployment on AKS #
-#############################################
+###############################################
+# Capítulo 3: Despliege de aplicacioes en AKS #
+###############################################
 
 # Vamos desplegar una app con un frontend y backend de redis (un master y dos reéplicas)
 # Cambiamos al directorio del capítulo 3
