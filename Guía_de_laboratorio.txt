@@ -328,13 +328,13 @@ kubectl delete -f azure-vote.yaml
 kubectl get all
 
 
-###############################################
-# Capítulo 3: Despliege de aplicacioes en AKS #
-###############################################
+################################################
+# Capítulo 3: Despliege de aplicaciones en AKS #
+################################################
 
-# Vamos desplegar una app con un frontend y backend de redis (un master y dos reéplicas)
-# Cambiamos al directorio del capítulo 3
-cd ~/Hands-On-Kubernetes-on-Azure/Chapter03/
+# Vamos desplegar una app con un frontend y backend de redis (un master y dos réplicas)
+# Cambiamos al directorio de trabajo.
+cd ~/k8sAzure/Despliegue_APPs
 
 # Desplegamos el backend del maestro de redis.
 kubectl apply -f redis-master-deployment.yaml
