@@ -126,7 +126,7 @@ az group create \
     --location westeurope
 
 # Creamos el ACR.
-ACR_NAME=myacrasg20220204
+ACR_NAME=myacrasg20220205
 az acr create \
     --resource-group myACR-rg \
     --name $ACR_NAME \
