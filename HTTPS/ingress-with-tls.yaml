@@ -17,7 +17,7 @@ spec:
             name: frontend
             port: 
               number: 80
-    host: nf-aks-book.westus2.cloudapp.azure.com
+    host: <Poner aquí el nombre dns del ingress>
   tls:
     - hosts:
       - nf-aks-book.westus2.cloudapp.azure.com
