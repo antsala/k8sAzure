@@ -638,8 +638,8 @@ code mariadbss.yaml
 # Línea 151:        Establece el modo de acceso 'ReadWriteOnce', que creará un almacenamiento de bloque, que        
 #                   en Azure es un disco. También tenemos los modos 'ReadOnlyMany' y 'ReadWriteMany'.
 #                   Como su nombre sugiere, un volumen 'ReadWriteOnce' solo puede ser conectado a un único
-#                   pod, mientras que un 'ReadOnlMany' o un 'ReadWriteMany' pueden ser conectados a diferentes
-#                   pods a la vez. Estos dos últimos requieres un mecanismo de almacenamiento subyacente Del
+#                   pod, mientras que un 'ReadOnlyMany' o un 'ReadWriteMany' pueden ser conectados a diferentes
+#                   pods a la vez. Estos dos últimos requieren un mecanismo de almacenamiento subyacente Del
 #                   tipo Azure Files o Azure Blob.
 #
 # Línea 154:        Define el tamaño del disco.
@@ -654,7 +654,7 @@ kubectl get storageclass
 # Para mostrar los detalles del PVC
 kubectl get pvc
 
-# El nombre del PVC puede buscarse en los recursos de Azure y se mostrará el disco de 8 GiB.
+# El nombre del PVC puede buscarse en los recursos de Azure (discos).
 
 # El concepto del PVC abstrae las cuestiones específicas del proveedor cloud. Esto permite que
 # la misma plantilla de Helm funcione en Azure, AWS o GCP. En AWS ser utilizará un Elastic Block Storage (EBS)
@@ -682,7 +682,8 @@ kubectl get all
 # Comprobar si se ha quedado algún volumen (la eliminación del pod no implica su eliminación)
 kubectl delete pvc --all
 
-# Nota: El disco en Azure no se elimina.
+# Nota: El disco en Azure no se elimina. Se eliminará cuando borremos el cluster y si no
+#       es así, debemos borrarlo manualmente.
 
 
 
@@ -5093,8 +5094,8 @@ az aks create \
 
 # El siguiente comando descarga las credenciales y las almacena en ./kube/config
 az aks get-credentials \
-    --resource-group myaks-rg -\
-    -name myaks \
+    --resource-group myaks-rg \
+    --name myaks \
     --admin \
     --overwrite-existing
 
