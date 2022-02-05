@@ -296,12 +296,10 @@ az group delete \
     --resource-group myACR-rg \
     --yes
 
+
 ##########################################
 # Despliegue de una aplicación de prueba #
 ##########################################
-
-# Clonamos repo con las prácticas.
-git clone https://github.com/PacktPublishing/Hands-on-Kubernetes-on-Azure-Third-Edition.git Hands-On-Kubernetes-on-Azure
 
 # Entramos en el capítulo 2
 cd Hands-On-Kubernetes-on-Azure/Chapter02/
